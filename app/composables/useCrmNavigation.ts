@@ -8,6 +8,7 @@ import {
   Settings,
   Workflow,
   Bot,
+  Radar,
   type LucideIcon,
 } from 'lucide-vue-next'
 
@@ -32,6 +33,13 @@ export function useCrmNavigation(): NavGroup[] {
       ],
     },
     {
+      label: 'Intelligence',
+      items: [
+        { title: 'Discovery', url: '/discovery', icon: Radar },
+        { title: 'Agents', url: '/agents', icon: Bot },
+      ],
+    },
+    {
       label: 'CRM',
       items: [
         { title: 'Leads', url: '/leads', icon: Users },
@@ -43,7 +51,6 @@ export function useCrmNavigation(): NavGroup[] {
       label: 'Automation',
       items: [
         { title: 'Flows', url: '/flows', icon: Workflow },
-        { title: 'Agents', url: '/agents', icon: Bot },
       ],
     },
     {

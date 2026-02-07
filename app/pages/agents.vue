@@ -17,62 +17,205 @@ import {
   Save,
   Play,
   Trash2,
+  Radar,
+  Brain,
+  Search,
+  Loader2,
+  CheckCircle2,
+  Activity,
+  Zap,
+  Shield,
+  Eye,
+  TrendingUp,
+  MessageSquare,
+  Users,
 } from 'lucide-vue-next'
 
-const selectedAgent = ref<number | null>(null)
+const {
+  agents, skills, tools, loading,
+  fetchAgents, fetchSkills, fetchTools,
+  createAgent, updateAgent, deleteAgent,
+  attachSkill, detachSkill, attachTool, detachTool,
+} = useAgents()
 
-const agents = ref([
-  {
-    id: 1,
-    name: 'Lead Qualifier',
-    description: 'Automatically scores and qualifies incoming leads based on company data and engagement signals.',
-    status: 'active' as const,
-    skills: ['Lead Qualification', 'Data Enrichment'],
-    tools: ['CRM Database', 'Web Search'],
-  },
-  {
-    id: 2,
-    name: 'Email Outreach Bot',
-    description: 'Crafts and sends personalized outreach emails to prospects based on their profile and interests.',
-    status: 'active' as const,
-    skills: ['Email Outreach', 'Follow-up Scheduler'],
-    tools: ['Email', 'CRM Database'],
-  },
-  {
-    id: 3,
-    name: 'Meeting Scheduler',
-    description: 'Coordinates meeting times between sales reps and prospects, handles timezone conversions.',
-    status: 'inactive' as const,
-    skills: ['Meeting Booking', 'Follow-up Scheduler'],
-    tools: ['Calendar', 'Email'],
-  },
-  {
-    id: 4,
-    name: 'Data Enrichment Agent',
-    description: 'Enriches contact records with company info, social profiles, and technology stack data.',
-    status: 'active' as const,
-    skills: ['Data Enrichment', 'Lead Qualification'],
-    tools: ['Web Search', 'CRM Database', 'Document Generator'],
-  },
-])
+const {
+  campaigns,
+  discoveredLeads,
+  agentActivities,
+  fetchCampaigns,
+  getRecentActivities,
+} = useDiscovery()
 
-const availableSkills = [
-  { name: 'Lead Qualification', icon: Target, description: 'Score and qualify leads automatically' },
-  { name: 'Email Outreach', icon: Send, description: 'Generate personalized email campaigns' },
-  { name: 'Data Enrichment', icon: Database, description: 'Enrich records with external data' },
-  { name: 'Follow-up Scheduler', icon: Clock, description: 'Schedule timely follow-up sequences' },
-  { name: 'Meeting Booking', icon: Video, description: 'Coordinate and book meetings' },
-]
+const selectedAgent = ref<string | null>(null)
 
-const availableTools = [
-  { name: 'Email', icon: Mail, description: 'Send and receive emails' },
-  { name: 'Calendar', icon: Calendar, description: 'Access calendar events' },
-  { name: 'CRM Database', icon: Database, description: 'Read/write CRM records' },
-  { name: 'Web Search', icon: Globe, description: 'Search the internet' },
-  { name: 'Document Generator', icon: FileOutput, description: 'Create documents and PDFs' },
-]
+onMounted(async () => {
+  await Promise.all([
+    fetchAgents(),
+    fetchSkills(),
+    fetchTools(),
+    fetchCampaigns(),
+  ])
+})
+
+// Map icon names to components
+const iconMap: Record<string, any> = {
+  Target, Send, Database, Clock, Video,
+  Mail, Calendar, Globe, FileOutput, Search,
+  Brain, Radar, Shield, Eye, MessageSquare,
+}
+
+const availableSkills = computed(() =>
+  skills.value.map(skill => ({
+    ...skill,
+    icon: iconMap[skill.icon || 'Sparkles'] || Sparkles
+  }))
+)
+
+const availableTools = computed(() =>
+  tools.value.map((tool: any) => ({
+    ...tool,
+    icon: iconMap[tool.icon || 'Wrench'] || Wrench
+  }))
+)
 
 const currentAgent = computed(() => agents.value.find(a => a.id === selectedAgent.value))
+
+// Agent type templates for creation
+const agentTemplates = [
+  {
+    name: 'Lead Scout',
+    description: 'Autonomously searches LinkedIn, company databases, and social media to discover potential leads matching your ICP.',
+    icon: Radar,
+    color: 'bg-blue-500',
+    category: 'discovery',
+  },
+  {
+    name: 'Signal Analyzer',
+    description: 'Monitors buying signals like funding rounds, job postings, tech stack changes, and social media activity.',
+    icon: Brain,
+    color: 'bg-purple-500',
+    category: 'intelligence',
+  },
+  {
+    name: 'Email Outreach',
+    description: 'Crafts personalized outreach emails based on lead profiles and engagement history.',
+    icon: Mail,
+    color: 'bg-green-500',
+    category: 'outreach',
+  },
+  {
+    name: 'Lead Qualifier',
+    description: 'Scores and qualifies leads based on engagement patterns, company fit, and behavioral signals.',
+    icon: Target,
+    color: 'bg-amber-500',
+    category: 'qualification',
+  },
+]
+
+// ── Status toggle ──
+async function toggleStatus() {
+  if (!currentAgent.value) return
+  const newStatus = currentAgent.value.status === 'active' ? 'inactive' : 'active'
+  await updateAgent(currentAgent.value.id, { status: newStatus })
+}
+
+// ── Skill toggle ──
+async function toggleSkill(skillId: string, skillName: string) {
+  if (!currentAgent.value) return
+  const isAttached = currentAgent.value.skills?.includes(skillName)
+  if (isAttached) {
+    await detachSkill(currentAgent.value.id, skillId)
+  } else {
+    await attachSkill(currentAgent.value.id, skillId)
+  }
+}
+
+// ── Tool toggle ──
+async function toggleTool(toolId: string, toolName: string) {
+  if (!currentAgent.value) return
+  const isAttached = currentAgent.value.tools?.includes(toolName)
+  if (isAttached) {
+    await detachTool(currentAgent.value.id, toolId)
+  } else {
+    await attachTool(currentAgent.value.id, toolId)
+  }
+}
+
+// ── Create agent dialog ──
+const showCreateDialog = ref(false)
+const selectedTemplate = ref<string | null>(null)
+const createForm = ref({
+  name: '',
+  description: '',
+})
+
+function openCreateDialog(template?: typeof agentTemplates[number]) {
+  if (template) {
+    createForm.value = { name: template.name, description: template.description }
+    selectedTemplate.value = template.name
+  } else {
+    createForm.value = { name: '', description: '' }
+    selectedTemplate.value = null
+  }
+  showCreateDialog.value = true
+}
+
+async function handleCreate() {
+  await createAgent({
+    name: createForm.value.name,
+    description: createForm.value.description || null,
+    status: 'inactive',
+  })
+  showCreateDialog.value = false
+}
+
+// ── Delete agent dialog ──
+const showDeleteConfirm = ref(false)
+
+async function handleDelete() {
+  if (!currentAgent.value) return
+  await deleteAgent(currentAgent.value.id)
+  selectedAgent.value = null
+  showDeleteConfirm.value = false
+}
+
+// ── Save config (name + description) ──
+const editName = ref('')
+const editDescription = ref('')
+
+watch(currentAgent, (agent) => {
+  if (agent) {
+    editName.value = agent.name
+    editDescription.value = agent.description || ''
+  }
+}, { immediate: true })
+
+async function saveConfig() {
+  if (!currentAgent.value) return
+  await updateAgent(currentAgent.value.id, {
+    name: editName.value,
+    description: editDescription.value || null,
+  })
+}
+
+// Agent activity for detail view
+const agentActivity = computed(() => {
+  if (!currentAgent.value) return []
+  return agentActivities.value
+    .filter(a => a.agent_name === currentAgent.value?.name)
+    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+    .slice(0, 10)
+})
+
+function formatTimeAgo(date: string) {
+  const now = new Date()
+  const past = new Date(date)
+  const diff = Math.floor((now.getTime() - past.getTime()) / 1000 / 60)
+  if (diff < 1) return 'Just now'
+  if (diff < 60) return `${diff}m ago`
+  if (diff < 1440) return `${Math.floor(diff / 60)}h ago`
+  return `${Math.floor(diff / 1440)}d ago`
+}
 </script>
 
 <template>
@@ -86,37 +229,83 @@ const currentAgent = computed(() => agents.value.find(a => a.id === selectedAgen
             Create and manage your AI-powered automation agents.
           </p>
         </div>
-        <Button>
-          <Plus class="size-4" />
+        <Button @click="openCreateDialog()">
+          <Plus class="size-4 mr-1" />
           New Agent
         </Button>
       </div>
 
-      <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      <!-- Agent Templates -->
+      <div class="mb-6">
+        <h3 class="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">Quick Start Templates</h3>
+        <div class="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+          <div
+            v-for="template in agentTemplates"
+            :key="template.name"
+            class="rounded-xl border border-dashed border-border bg-card/50 p-4 cursor-pointer hover:border-primary/40 hover:bg-primary/5 transition-all group"
+            @click="openCreateDialog(template)"
+          >
+            <div class="flex items-center gap-3 mb-2">
+              <div :class="[template.color, 'rounded-lg p-2 text-white']">
+                <component :is="template.icon" class="size-4" />
+              </div>
+              <h4 class="text-sm font-semibold group-hover:text-primary transition-colors">{{ template.name }}</h4>
+            </div>
+            <p class="text-xs text-muted-foreground line-clamp-2">{{ template.description }}</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Existing Agents -->
+      <div class="mb-3 flex items-center justify-between">
+        <h3 class="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Your Agents</h3>
+        <span class="text-xs text-muted-foreground">{{ agents.length }} agent{{ agents.length !== 1 ? 's' : '' }}</span>
+      </div>
+
+      <div v-if="loading" class="text-center py-12 text-muted-foreground">Loading agents...</div>
+
+      <div v-else-if="agents.length === 0" class="rounded-xl border-2 border-dashed border-border p-12 text-center">
+        <Bot class="size-10 text-muted-foreground/40 mx-auto mb-3" />
+        <p class="text-sm font-medium text-muted-foreground mb-2">No agents yet</p>
+        <p class="text-xs text-muted-foreground mb-4">Create your first agent using a template above or from scratch.</p>
+        <Button size="sm" @click="openCreateDialog()">
+          <Plus class="size-4 mr-1" /> Create Agent
+        </Button>
+      </div>
+
+      <div v-else class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         <div
           v-for="agent in agents"
           :key="agent.id"
-          class="rounded-xl border border-border bg-card p-6 shadow-sm cursor-pointer hover:shadow-md transition-shadow"
+          class="rounded-xl border border-border bg-card p-6 shadow-sm cursor-pointer hover:shadow-md transition-shadow group"
           @click="selectedAgent = agent.id"
         >
           <div class="flex items-start justify-between mb-3">
-            <div class="rounded-lg bg-muted p-2">
-              <Bot class="size-5 text-muted-foreground" />
+            <div class="rounded-lg bg-primary/10 p-2.5">
+              <Bot class="size-5 text-primary" />
             </div>
-            <Badge :variant="agent.status === 'active' ? 'default' : 'secondary'">
-              {{ agent.status }}
-            </Badge>
+            <div class="flex items-center gap-2">
+              <Badge :variant="agent.status === 'active' ? 'default' : 'secondary'" class="capitalize">
+                <span v-if="agent.status === 'active'" class="relative flex size-1.5 mr-1">
+                  <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
+                  <span class="relative inline-flex rounded-full size-1.5 bg-green-500" />
+                </span>
+                {{ agent.status }}
+              </Badge>
+            </div>
           </div>
-          <h3 class="text-base font-semibold mb-1">{{ agent.name }}</h3>
-          <p class="text-sm text-muted-foreground mb-4 line-clamp-2">{{ agent.description }}</p>
-          <div class="flex items-center gap-4 text-xs text-muted-foreground">
+          <h3 class="text-base font-semibold mb-1 group-hover:text-primary transition-colors">{{ agent.name }}</h3>
+          <p class="text-sm text-muted-foreground mb-4 line-clamp-2">{{ agent.description || 'No description' }}</p>
+
+          <!-- Stats row -->
+          <div class="flex items-center gap-4 text-xs text-muted-foreground pt-3 border-t border-border">
             <span class="flex items-center gap-1">
               <Sparkles class="size-3" />
-              {{ agent.skills.length }} skills
+              {{ (agent.skills || []).length }} skills
             </span>
             <span class="flex items-center gap-1">
               <Wrench class="size-3" />
-              {{ agent.tools.length }} tools
+              {{ (agent.tools || []).length }} tools
             </span>
           </div>
         </div>
@@ -124,6 +313,7 @@ const currentAgent = computed(() => agents.value.find(a => a.id === selectedAgen
         <!-- Add Agent card -->
         <div
           class="rounded-xl border-2 border-dashed border-border bg-card/50 p-6 flex flex-col items-center justify-center text-muted-foreground hover:border-primary/50 hover:text-foreground transition-colors cursor-pointer min-h-[200px]"
+          @click="openCreateDialog()"
         >
           <div class="rounded-full bg-muted p-3 mb-3">
             <Plus class="size-5" />
@@ -143,33 +333,49 @@ const currentAgent = computed(() => agents.value.find(a => a.id === selectedAgen
         Back to Agents
       </button>
 
+      <!-- Agent header -->
+      <div class="flex items-start justify-between mb-6">
+        <div class="flex items-center gap-4">
+          <div class="rounded-xl bg-primary/10 p-3">
+            <Bot class="size-6 text-primary" />
+          </div>
+          <div>
+            <div class="flex items-center gap-2">
+              <h2 class="text-xl font-bold">{{ currentAgent.name }}</h2>
+              <Badge :variant="currentAgent.status === 'active' ? 'default' : 'secondary'" class="capitalize">
+                {{ currentAgent.status }}
+              </Badge>
+            </div>
+            <p class="text-sm text-muted-foreground">{{ currentAgent.description || 'No description' }}</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <Button variant="outline" size="sm" @click="toggleStatus">
+            <component :is="currentAgent.status === 'active' ? Activity : Play" class="size-4 mr-1" />
+            {{ currentAgent.status === 'active' ? 'Deactivate' : 'Activate' }}
+          </Button>
+        </div>
+      </div>
+
       <div class="grid gap-6 lg:grid-cols-3">
         <!-- Left: Agent config + Skills -->
         <div class="lg:col-span-2 space-y-6">
           <!-- Config -->
           <div class="rounded-xl border border-border bg-card p-6 shadow-sm">
-            <h3 class="text-lg font-semibold mb-4">Agent Configuration</h3>
+            <h3 class="text-lg font-semibold mb-4">Configuration</h3>
             <div class="space-y-4">
               <div>
                 <label class="text-sm font-medium mb-1.5 block">Name</label>
-                <Input :model-value="currentAgent.name" placeholder="Agent name" />
+                <Input v-model="editName" placeholder="Agent name" />
               </div>
               <div>
                 <label class="text-sm font-medium mb-1.5 block">Description</label>
-                <Input :model-value="currentAgent.description" placeholder="What does this agent do?" />
+                <Textarea v-model="editDescription" placeholder="What does this agent do?" rows="3" />
               </div>
-              <div class="flex items-center justify-between pt-2">
-                <div>
-                  <p class="text-sm font-medium">Status</p>
-                  <p class="text-xs text-muted-foreground">Enable or disable this agent</p>
-                </div>
-                <Badge
-                  :variant="currentAgent.status === 'active' ? 'default' : 'secondary'"
-                  class="cursor-pointer"
-                >
-                  {{ currentAgent.status === 'active' ? 'Active' : 'Inactive' }}
-                </Badge>
-              </div>
+              <Button size="sm" @click="saveConfig">
+                <Save class="size-4 mr-1" />
+                Save Changes
+              </Button>
             </div>
           </div>
 
@@ -177,33 +383,67 @@ const currentAgent = computed(() => agents.value.find(a => a.id === selectedAgen
           <div class="rounded-xl border border-border bg-card p-6 shadow-sm">
             <h3 class="text-lg font-semibold mb-1">Skills</h3>
             <p class="text-sm text-muted-foreground mb-4">
-              Capabilities this agent can use to complete tasks.
+              Click to attach or detach skills from this agent.
             </p>
-            <div class="space-y-2">
+            <div v-if="availableSkills.length === 0" class="text-sm text-muted-foreground py-4 text-center">
+              No skills available. Add skills via the database.
+            </div>
+            <div class="grid gap-2 md:grid-cols-2">
               <div
                 v-for="skill in availableSkills"
-                :key="skill.name"
+                :key="skill.id"
                 :class="[
                   'flex items-center gap-3 rounded-lg border p-3 transition-colors cursor-pointer',
-                  currentAgent.skills.includes(skill.name)
+                  currentAgent.skills?.includes(skill.name)
                     ? 'border-primary bg-primary/5'
                     : 'border-border hover:bg-muted/50',
                 ]"
+                @click="toggleSkill(skill.id, skill.name)"
               >
                 <div class="rounded-md bg-muted p-2">
                   <component :is="skill.icon" class="size-4 text-muted-foreground" />
                 </div>
                 <div class="flex-1 min-w-0">
                   <p class="text-sm font-medium">{{ skill.name }}</p>
-                  <p class="text-xs text-muted-foreground">{{ skill.description }}</p>
+                  <p class="text-xs text-muted-foreground truncate">{{ skill.description }}</p>
                 </div>
                 <Badge
-                  v-if="currentAgent.skills.includes(skill.name)"
+                  v-if="currentAgent.skills?.includes(skill.name)"
                   variant="default"
+                  class="text-xs"
                 >
-                  Attached
+                  Active
                 </Badge>
-                <Badge v-else variant="outline">Add</Badge>
+                <Badge v-else variant="outline" class="text-xs">Add</Badge>
+              </div>
+            </div>
+          </div>
+
+          <!-- Activity Log -->
+          <div class="rounded-xl border border-border bg-card p-6 shadow-sm">
+            <h3 class="text-lg font-semibold mb-4">Recent Activity</h3>
+            <div v-if="agentActivity.length === 0" class="text-sm text-muted-foreground text-center py-6">
+              No activity recorded yet. Activate this agent to start seeing activity.
+            </div>
+            <div v-else class="space-y-3">
+              <div
+                v-for="activity in agentActivity"
+                :key="activity.id"
+                class="flex items-start gap-3 pb-3 border-b border-border last:border-0 last:pb-0"
+              >
+                <div :class="[
+                  'rounded-md p-1.5 mt-0.5 shrink-0',
+                  activity.status === 'running' ? 'bg-primary/10' : activity.status === 'error' ? 'bg-destructive/10' : 'bg-muted'
+                ]">
+                  <Loader2 v-if="activity.status === 'running'" class="size-3.5 text-primary animate-spin" />
+                  <CheckCircle2 v-else-if="activity.status === 'completed'" class="size-3.5 text-muted-foreground" />
+                  <Activity v-else class="size-3.5 text-destructive" />
+                </div>
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm font-medium">{{ activity.action }}</p>
+                  <p class="text-xs text-muted-foreground mt-0.5">{{ activity.detail }}</p>
+                </div>
+                <span class="text-xs text-muted-foreground whitespace-nowrap">{{ formatTimeAgo(activity.timestamp) }}</span>
               </div>
             </div>
           </div>
@@ -215,18 +455,22 @@ const currentAgent = computed(() => agents.value.find(a => a.id === selectedAgen
           <div class="rounded-xl border border-border bg-card p-6 shadow-sm">
             <h3 class="text-lg font-semibold mb-1">Tools</h3>
             <p class="text-sm text-muted-foreground mb-4">
-              External integrations available to this agent.
+              Click to attach or detach integrations.
             </p>
+            <div v-if="availableTools.length === 0" class="text-sm text-muted-foreground py-4 text-center">
+              No tools available. Add tools via the database.
+            </div>
             <div class="space-y-2">
               <div
                 v-for="tool in availableTools"
-                :key="tool.name"
+                :key="tool.id"
                 :class="[
                   'flex items-center gap-3 rounded-lg border p-3 transition-colors cursor-pointer',
-                  currentAgent.tools.includes(tool.name)
+                  currentAgent.tools?.includes(tool.name)
                     ? 'border-primary bg-primary/5'
                     : 'border-border hover:bg-muted/50',
                 ]"
+                @click="toggleTool(tool.id, tool.name)"
               >
                 <div class="rounded-md bg-muted p-2">
                   <component :is="tool.icon" class="size-4 text-muted-foreground" />
@@ -235,7 +479,37 @@ const currentAgent = computed(() => agents.value.find(a => a.id === selectedAgen
                   <p class="text-sm font-medium">{{ tool.name }}</p>
                   <p class="text-xs text-muted-foreground truncate">{{ tool.description }}</p>
                 </div>
+                <Badge
+                  v-if="currentAgent.tools?.includes(tool.name)"
+                  variant="default"
+                  class="text-xs"
+                >
+                  Active
+                </Badge>
+                <Badge v-else variant="outline" class="text-xs">Add</Badge>
               </div>
+            </div>
+          </div>
+
+          <!-- Agent Performance -->
+          <div class="rounded-xl border border-border bg-card p-6 shadow-sm">
+            <h3 class="text-sm font-semibold mb-3">Performance</h3>
+            <div class="space-y-3">
+              <div class="flex items-center justify-between">
+                <span class="text-xs text-muted-foreground">Leads Found</span>
+                <span class="text-sm font-semibold">--</span>
+              </div>
+              <div class="flex items-center justify-between">
+                <span class="text-xs text-muted-foreground">Success Rate</span>
+                <span class="text-sm font-semibold">--</span>
+              </div>
+              <div class="flex items-center justify-between">
+                <span class="text-xs text-muted-foreground">Avg Confidence</span>
+                <span class="text-sm font-semibold">--</span>
+              </div>
+              <p class="text-[11px] text-muted-foreground text-center pt-2 border-t border-border">
+                Performance data appears once the agent runs campaigns.
+              </p>
             </div>
           </div>
 
@@ -243,16 +517,18 @@ const currentAgent = computed(() => agents.value.find(a => a.id === selectedAgen
           <div class="rounded-xl border border-border bg-card p-6 shadow-sm">
             <h3 class="text-sm font-semibold mb-3">Actions</h3>
             <div class="space-y-2">
-              <Button class="w-full" size="sm">
-                <Save class="size-4" />
-                Save Changes
-              </Button>
               <Button class="w-full" variant="outline" size="sm">
-                <Play class="size-4" />
+                <Play class="size-4 mr-1" />
                 Test Agent
               </Button>
-              <Button class="w-full" variant="destructive" size="sm">
-                <Trash2 class="size-4" />
+              <NuxtLink to="/discovery" class="block">
+                <Button class="w-full" variant="outline" size="sm">
+                  <Radar class="size-4 mr-1" />
+                  Assign to Campaign
+                </Button>
+              </NuxtLink>
+              <Button class="w-full" variant="destructive" size="sm" @click="showDeleteConfirm = true">
+                <Trash2 class="size-4 mr-1" />
                 Delete Agent
               </Button>
             </div>
@@ -260,5 +536,50 @@ const currentAgent = computed(() => agents.value.find(a => a.id === selectedAgen
         </div>
       </div>
     </template>
+
+    <!-- Create Agent Dialog -->
+    <Dialog :open="showCreateDialog" @update:open="showCreateDialog = $event">
+      <DialogContent class="sm:max-w-[450px]">
+        <DialogHeader>
+          <DialogTitle>Create Agent</DialogTitle>
+          <DialogDescription>
+            {{ selectedTemplate ? `Creating from "${selectedTemplate}" template.` : 'Set up a new AI agent with a name and description.' }}
+          </DialogDescription>
+        </DialogHeader>
+        <div class="grid gap-4 py-4">
+          <div>
+            <label class="text-sm font-medium mb-1.5 block">Name *</label>
+            <Input v-model="createForm.name" placeholder="Lead Qualifier Agent" />
+          </div>
+          <div>
+            <label class="text-sm font-medium mb-1.5 block">Description</label>
+            <Textarea v-model="createForm.description" placeholder="What will this agent do?" rows="3" />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" @click="showCreateDialog = false">Cancel</Button>
+          <Button :disabled="!createForm.name" @click="handleCreate">
+            <Bot class="size-4 mr-1" />
+            Create Agent
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    <!-- Delete Confirmation Dialog -->
+    <Dialog :open="showDeleteConfirm" @update:open="showDeleteConfirm = $event">
+      <DialogContent class="sm:max-w-[400px]">
+        <DialogHeader>
+          <DialogTitle>Delete Agent</DialogTitle>
+          <DialogDescription>
+            Are you sure you want to delete "{{ currentAgent?.name }}"? This will also remove all attached skills and tools. This action cannot be undone.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="outline" @click="showDeleteConfirm = false">Cancel</Button>
+          <Button variant="destructive" @click="handleDelete">Delete</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   </div>
 </template>

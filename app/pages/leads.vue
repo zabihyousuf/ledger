@@ -6,7 +6,13 @@ import {
   Pencil,
   Trash2,
   ArrowUpDown,
+  Loader2,
+  Linkedin,
+  Mail,
+  MessageSquare,
+  Copy,
 } from 'lucide-vue-next'
+import { toast } from 'vue-sonner'
 import type { Lead, LeadInsert } from '~/composables/useLeads'
 
 const { leads, loading, fetchLeads, createLead, updateLead, deleteLead } = useLeads()
@@ -71,6 +77,8 @@ const showDialog = ref(false)
 const editingLead = ref<Lead | null>(null)
 const showDeleteConfirm = ref(false)
 const deletingLead = ref<Lead | null>(null)
+const savingLead = ref(false)
+const deletingLeadLoading = ref(false)
 
 const form = ref({
   name: '',
@@ -120,25 +128,33 @@ function openEditDialog(lead: Lead) {
 }
 
 async function saveLead() {
-  const payload: LeadInsert = {
-    name: form.value.name,
-    email: form.value.email || null,
-    phone: form.value.phone || null,
-    company: form.value.company || null,
-    position: form.value.position || null,
-    status: form.value.status,
-    source: form.value.source,
-    score: form.value.score ?? null,
-    value: form.value.value ?? null,
-    notes: form.value.notes || null,
-  }
+  if (savingLead.value) return
+  savingLead.value = true
+  try {
+    const payload: LeadInsert = {
+      name: form.value.name,
+      email: form.value.email || null,
+      phone: form.value.phone || null,
+      company: form.value.company || null,
+      position: form.value.position || null,
+      status: form.value.status,
+      source: form.value.source,
+      score: form.value.score ?? null,
+      value: form.value.value ?? null,
+      notes: form.value.notes || null,
+    }
 
-  if (editingLead.value) {
-    await updateLead(editingLead.value.id, payload)
-  } else {
-    await createLead(payload)
+    if (editingLead.value) {
+      await updateLead(editingLead.value.id, payload)
+      toast.success('Lead updated', { description: `"${payload.name}" has been saved.` })
+    } else {
+      await createLead(payload)
+      toast.success('Lead created', { description: `"${payload.name}" has been added.` })
+    }
+    showDialog.value = false
+  } finally {
+    savingLead.value = false
   }
-  showDialog.value = false
 }
 
 function confirmDelete(lead: Lead) {
@@ -147,10 +163,17 @@ function confirmDelete(lead: Lead) {
 }
 
 async function handleDelete() {
-  if (!deletingLead.value) return
-  await deleteLead(deletingLead.value.id)
-  showDeleteConfirm.value = false
-  deletingLead.value = null
+  if (!deletingLead.value || deletingLeadLoading.value) return
+  deletingLeadLoading.value = true
+  try {
+    const name = deletingLead.value.name
+    await deleteLead(deletingLead.value.id)
+    showDeleteConfirm.value = false
+    deletingLead.value = null
+    toast.success('Lead deleted', { description: `"${name}" has been removed.` })
+  } finally {
+    deletingLeadLoading.value = false
+  }
 }
 
 function statusVariant(status: string): 'default' | 'secondary' | 'outline' | 'destructive' {
@@ -165,6 +188,29 @@ function statusVariant(status: string): 'default' | 'secondary' | 'outline' | 'd
 
 function formatDate(date: string) {
   return new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+// ── Message generation ──
+function generateMessage(lead: Lead, channel: 'linkedin' | 'email'): string {
+  const name = lead.name.split(' ')[0]
+  const company = lead.company || 'your company'
+
+  if (channel === 'linkedin') {
+    return `Hi ${name}, I came across your profile and was impressed by the work at ${company}. I'd love to connect and explore how we might be able to help ${company} achieve its goals. Looking forward to hearing from you!`
+  }
+  return `Hi ${name},\n\nI hope this message finds you well. I recently came across ${company} and wanted to reach out to see if there's an opportunity for us to collaborate.\n\nI'd love to schedule a brief call to discuss how we can help ${company} grow.\n\nBest regards`
+}
+
+async function copyMessageToClipboard(lead: Lead, channel: 'linkedin' | 'email') {
+  const message = generateMessage(lead, channel)
+  try {
+    await navigator.clipboard.writeText(message)
+    toast.success('Message copied to clipboard', {
+      description: `${channel === 'linkedin' ? 'LinkedIn' : 'Email'} message for ${lead.name} is ready to paste.`,
+    })
+  } catch {
+    toast.error('Failed to copy message')
+  }
 }
 </script>
 
@@ -234,15 +280,16 @@ function formatDate(date: string) {
               <th class="px-4 py-3 font-medium cursor-pointer select-none" @click="toggleSort('created_at')">
                 <span class="flex items-center gap-1">Created <ArrowUpDown class="size-3" /></span>
               </th>
+              <th class="px-4 py-3 font-medium">Message</th>
               <th class="px-4 py-3 font-medium w-10" />
             </tr>
           </thead>
           <tbody>
             <tr v-if="loading" class="border-b border-border">
-              <td colspan="9" class="px-4 py-8 text-center text-muted-foreground">Loading...</td>
+              <td colspan="10" class="px-4 py-8 text-center text-muted-foreground">Loading...</td>
             </tr>
             <tr v-else-if="sortedLeads.length === 0" class="border-b border-border">
-              <td colspan="9" class="px-4 py-8 text-center text-muted-foreground">
+              <td colspan="10" class="px-4 py-8 text-center text-muted-foreground">
                 {{ searchQuery || statusFilter !== 'all' || sourceFilter !== 'all' ? 'No leads match your filters.' : 'No leads yet. Create your first lead!' }}
               </td>
             </tr>
@@ -268,6 +315,28 @@ function formatDate(date: string) {
                 {{ lead.value ? `$${lead.value.toLocaleString()}` : '-' }}
               </td>
               <td class="px-4 py-3 text-sm text-muted-foreground">{{ formatDate(lead.created_at) }}</td>
+              <td class="px-4 py-3">
+                <div class="flex items-center gap-1">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    class="h-7 w-7"
+                    title="Copy LinkedIn message"
+                    @click.stop="copyMessageToClipboard(lead, 'linkedin')"
+                  >
+                    <Linkedin class="size-3.5 text-muted-foreground" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    class="h-7 w-7"
+                    title="Copy email message"
+                    @click.stop="copyMessageToClipboard(lead, 'email')"
+                  >
+                    <Mail class="size-3.5 text-muted-foreground" />
+                  </Button>
+                </div>
+              </td>
               <td class="px-4 py-3">
                 <DropdownMenu>
                   <DropdownMenuTrigger as-child>
@@ -378,9 +447,10 @@ function formatDate(date: string) {
         </div>
 
         <DialogFooter>
-          <Button variant="outline" @click="showDialog = false">Cancel</Button>
-          <Button :disabled="!form.name" @click="saveLead">
-            {{ editingLead ? 'Update' : 'Create' }}
+          <Button variant="outline" @click="showDialog = false" :disabled="savingLead">Cancel</Button>
+          <Button :disabled="!form.name || savingLead" @click="saveLead">
+            <Loader2 v-if="savingLead" class="size-4 mr-1 animate-spin" />
+            {{ savingLead ? 'Saving...' : (editingLead ? 'Update' : 'Create') }}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -396,8 +466,11 @@ function formatDate(date: string) {
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
-          <Button variant="outline" @click="showDeleteConfirm = false">Cancel</Button>
-          <Button variant="destructive" @click="handleDelete">Delete</Button>
+          <Button variant="outline" @click="showDeleteConfirm = false" :disabled="deletingLeadLoading">Cancel</Button>
+          <Button variant="destructive" :disabled="deletingLeadLoading" @click="handleDelete">
+            <Loader2 v-if="deletingLeadLoading" class="size-4 mr-1 animate-spin" />
+            {{ deletingLeadLoading ? 'Deleting...' : 'Delete' }}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

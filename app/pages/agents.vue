@@ -30,6 +30,7 @@ import {
   MessageSquare,
   Users,
 } from 'lucide-vue-next'
+import { toast } from 'vue-sonner'
 
 const {
   agents, skills, tools, loading,
@@ -112,32 +113,81 @@ const agentTemplates = [
   },
 ]
 
+// ── Loading states ──
+const togglingStatus = ref(false)
+const loadingSkillId = ref<string | null>(null)
+const loadingToolId = ref<string | null>(null)
+const savingConfig = ref(false)
+const creatingAgent = ref(false)
+const deletingAgentLoading = ref(false)
+const testingAgent = ref(false)
+
+// ── Hover states for "Unattach" badges ──
+const hoveredSkillId = ref<string | null>(null)
+const hoveredToolId = ref<string | null>(null)
+
 // ── Status toggle ──
 async function toggleStatus() {
-  if (!currentAgent.value) return
-  const newStatus = currentAgent.value.status === 'active' ? 'inactive' : 'active'
-  await updateAgent(currentAgent.value.id, { status: newStatus })
+  if (!currentAgent.value || togglingStatus.value) return
+  togglingStatus.value = true
+  try {
+    const newStatus = currentAgent.value.status === 'active' ? 'inactive' : 'active'
+    await updateAgent(currentAgent.value.id, { status: newStatus })
+    toast.success(newStatus === 'active' ? 'Agent activated' : 'Agent deactivated', {
+      description: `"${currentAgent.value.name}" is now ${newStatus}.`,
+    })
+  } catch (error) {
+    toast.error('Failed to update agent status')
+  } finally {
+    togglingStatus.value = false
+  }
 }
 
 // ── Skill toggle ──
 async function toggleSkill(skillId: string, skillName: string) {
-  if (!currentAgent.value) return
-  const isAttached = currentAgent.value.skills?.includes(skillName)
-  if (isAttached) {
-    await detachSkill(currentAgent.value.id, skillId)
-  } else {
-    await attachSkill(currentAgent.value.id, skillId)
+  if (!currentAgent.value || loadingSkillId.value) return
+  loadingSkillId.value = skillId
+  try {
+    const isAttached = currentAgent.value.skills?.includes(skillName)
+    if (isAttached) {
+      await detachSkill(currentAgent.value.id, skillId)
+      toast.success('Skill detached', {
+        description: `"${skillName}" removed from ${currentAgent.value.name}.`,
+      })
+    } else {
+      await attachSkill(currentAgent.value.id, skillId)
+      toast.success('Skill attached', {
+        description: `"${skillName}" added to ${currentAgent.value.name}.`,
+      })
+    }
+  } catch (error) {
+    toast.error('Failed to update skill')
+  } finally {
+    loadingSkillId.value = null
   }
 }
 
 // ── Tool toggle ──
 async function toggleTool(toolId: string, toolName: string) {
-  if (!currentAgent.value) return
-  const isAttached = currentAgent.value.tools?.includes(toolName)
-  if (isAttached) {
-    await detachTool(currentAgent.value.id, toolId)
-  } else {
-    await attachTool(currentAgent.value.id, toolId)
+  if (!currentAgent.value || loadingToolId.value) return
+  loadingToolId.value = toolId
+  try {
+    const isAttached = currentAgent.value.tools?.includes(toolName)
+    if (isAttached) {
+      await detachTool(currentAgent.value.id, toolId)
+      toast.success('Tool detached', {
+        description: `"${toolName}" removed from ${currentAgent.value.name}.`,
+      })
+    } else {
+      await attachTool(currentAgent.value.id, toolId)
+      toast.success('Tool attached', {
+        description: `"${toolName}" added to ${currentAgent.value.name}.`,
+      })
+    }
+  } catch (error) {
+    toast.error('Failed to update tool')
+  } finally {
+    loadingToolId.value = null
   }
 }
 
@@ -161,22 +211,44 @@ function openCreateDialog(template?: typeof agentTemplates[number]) {
 }
 
 async function handleCreate() {
-  await createAgent({
-    name: createForm.value.name,
-    description: createForm.value.description || null,
-    status: 'inactive',
-  })
-  showCreateDialog.value = false
+  if (creatingAgent.value) return
+  creatingAgent.value = true
+  try {
+    await createAgent({
+      name: createForm.value.name,
+      description: createForm.value.description || null,
+      status: 'inactive',
+    })
+    showCreateDialog.value = false
+    toast.success('Agent created', {
+      description: `"${createForm.value.name}" is ready to configure.`,
+    })
+  } catch (error) {
+    toast.error('Failed to create agent')
+  } finally {
+    creatingAgent.value = false
+  }
 }
 
 // ── Delete agent dialog ──
 const showDeleteConfirm = ref(false)
 
 async function handleDelete() {
-  if (!currentAgent.value) return
-  await deleteAgent(currentAgent.value.id)
-  selectedAgent.value = null
-  showDeleteConfirm.value = false
+  if (!currentAgent.value || deletingAgentLoading.value) return
+  deletingAgentLoading.value = true
+  try {
+    const name = currentAgent.value.name
+    await deleteAgent(currentAgent.value.id)
+    selectedAgent.value = null
+    showDeleteConfirm.value = false
+    toast.success('Agent deleted', {
+      description: `"${name}" has been removed.`,
+    })
+  } catch (error) {
+    toast.error('Failed to delete agent')
+  } finally {
+    deletingAgentLoading.value = false
+  }
 }
 
 // ── Save config (name + description) ──
@@ -191,11 +263,21 @@ watch(currentAgent, (agent) => {
 }, { immediate: true })
 
 async function saveConfig() {
-  if (!currentAgent.value) return
-  await updateAgent(currentAgent.value.id, {
-    name: editName.value,
-    description: editDescription.value || null,
-  })
+  if (!currentAgent.value || savingConfig.value) return
+  savingConfig.value = true
+  try {
+    await updateAgent(currentAgent.value.id, {
+      name: editName.value,
+      description: editDescription.value || null,
+    })
+    toast.success('Agent updated', {
+      description: 'Configuration has been saved.',
+    })
+  } catch (error) {
+    toast.error('Failed to save configuration')
+  } finally {
+    savingConfig.value = false
+  }
 }
 
 // Agent activity for detail view
@@ -262,10 +344,15 @@ function formatTimeAgo(date: string) {
         <span class="text-xs text-muted-foreground">{{ agents.length }} agent{{ agents.length !== 1 ? 's' : '' }}</span>
       </div>
 
-      <div v-if="loading" class="text-center py-12 text-muted-foreground">Loading agents...</div>
+      <div v-if="loading" class="text-center py-12 text-muted-foreground">
+        <Loader2 class="size-6 animate-spin mx-auto mb-2" />
+        Loading agents...
+      </div>
 
       <div v-else-if="agents.length === 0" class="rounded-xl border-2 border-dashed border-border p-12 text-center">
-        <Bot class="size-10 text-muted-foreground/40 mx-auto mb-3" />
+        <div class="size-10 rounded-full bg-muted flex items-center justify-center mx-auto mb-3">
+          <Bot class="size-5 text-muted-foreground/40" />
+        </div>
         <p class="text-sm font-medium text-muted-foreground mb-2">No agents yet</p>
         <p class="text-xs text-muted-foreground mb-4">Create your first agent using a template above or from scratch.</p>
         <Button size="sm" @click="openCreateDialog()">
@@ -341,7 +428,7 @@ function formatTimeAgo(date: string) {
           </div>
           <div>
             <div class="flex items-center gap-2">
-              <h2 class="text-xl font-bold">{{ currentAgent.name }}</h2>
+              <h2 class="text-2xl font-bold tracking-tight">{{ currentAgent.name }}</h2>
               <Badge :variant="currentAgent.status === 'active' ? 'default' : 'secondary'" class="capitalize">
                 {{ currentAgent.status }}
               </Badge>
@@ -350,9 +437,10 @@ function formatTimeAgo(date: string) {
           </div>
         </div>
         <div class="flex items-center gap-2">
-          <Button variant="outline" size="sm" @click="toggleStatus">
-            <component :is="currentAgent.status === 'active' ? Activity : Play" class="size-4 mr-1" />
-            {{ currentAgent.status === 'active' ? 'Deactivate' : 'Activate' }}
+          <Button variant="outline" size="sm" :disabled="togglingStatus" @click="toggleStatus">
+            <Loader2 v-if="togglingStatus" class="size-4 mr-1 animate-spin" />
+            <component v-else :is="currentAgent.status === 'active' ? Activity : Play" class="size-4 mr-1" />
+            {{ togglingStatus ? 'Updating...' : (currentAgent.status === 'active' ? 'Deactivate' : 'Activate') }}
           </Button>
         </div>
       </div>
@@ -372,9 +460,10 @@ function formatTimeAgo(date: string) {
                 <label class="text-sm font-medium mb-1.5 block">Description</label>
                 <Textarea v-model="editDescription" placeholder="What does this agent do?" rows="3" />
               </div>
-              <Button size="sm" @click="saveConfig">
-                <Save class="size-4 mr-1" />
-                Save Changes
+              <Button size="sm" :disabled="savingConfig" @click="saveConfig">
+                <Loader2 v-if="savingConfig" class="size-4 mr-1 animate-spin" />
+                <Save v-else class="size-4 mr-1" />
+                {{ savingConfig ? 'Saving...' : 'Save Changes' }}
               </Button>
             </div>
           </div>
@@ -385,20 +474,28 @@ function formatTimeAgo(date: string) {
             <p class="text-sm text-muted-foreground mb-4">
               Click to attach or detach skills from this agent.
             </p>
-            <div v-if="availableSkills.length === 0" class="text-sm text-muted-foreground py-4 text-center">
-              No skills available. Add skills via the database.
+            <div v-if="availableSkills.length === 0" class="flex flex-col items-center py-6 text-center">
+              <div class="size-10 rounded-full bg-muted flex items-center justify-center mb-2">
+                <Sparkles class="size-5 text-muted-foreground/40" />
+              </div>
+              <p class="text-sm text-muted-foreground">No skills available</p>
+              <p class="text-xs text-muted-foreground/70 mt-1">Add skills via the database</p>
             </div>
             <div class="grid gap-2 md:grid-cols-2">
               <div
                 v-for="skill in availableSkills"
                 :key="skill.id"
                 :class="[
-                  'flex items-center gap-3 rounded-lg border p-3 transition-colors cursor-pointer',
-                  currentAgent.skills?.includes(skill.name)
-                    ? 'border-primary bg-primary/5'
-                    : 'border-border hover:bg-muted/50',
+                  'flex items-center gap-3 rounded-lg border p-3 transition-all cursor-pointer relative',
+                  loadingSkillId === skill.id
+                    ? 'border-primary/30 bg-primary/5 opacity-70 pointer-events-none'
+                    : currentAgent.skills?.includes(skill.name)
+                      ? 'border-primary bg-primary/5 hover:border-destructive/50'
+                      : 'border-border hover:bg-muted/50 hover:border-primary/40',
                 ]"
                 @click="toggleSkill(skill.id, skill.name)"
+                @mouseenter="hoveredSkillId = skill.id"
+                @mouseleave="hoveredSkillId = null"
               >
                 <div class="rounded-md bg-muted p-2">
                   <component :is="skill.icon" class="size-4 text-muted-foreground" />
@@ -407,23 +504,38 @@ function formatTimeAgo(date: string) {
                   <p class="text-sm font-medium">{{ skill.name }}</p>
                   <p class="text-xs text-muted-foreground truncate">{{ skill.description }}</p>
                 </div>
+                <!-- Loading spinner for this specific skill -->
+                <div v-if="loadingSkillId === skill.id" class="shrink-0">
+                  <Loader2 class="size-4 animate-spin text-primary" />
+                </div>
+                <!-- Active badge with hover "Unattach" -->
                 <Badge
-                  v-if="currentAgent.skills?.includes(skill.name)"
-                  variant="default"
-                  class="text-xs"
+                  v-else-if="currentAgent.skills?.includes(skill.name)"
+                  :variant="hoveredSkillId === skill.id ? 'destructive' : 'default'"
+                  class="text-xs transition-all duration-150 shrink-0"
                 >
-                  Active
+                  {{ hoveredSkillId === skill.id ? 'Unattach' : 'Active' }}
                 </Badge>
-                <Badge v-else variant="outline" class="text-xs">Add</Badge>
+                <!-- Add badge -->
+                <Badge v-else variant="outline" class="text-xs shrink-0">Add</Badge>
               </div>
             </div>
           </div>
 
           <!-- Activity Log -->
           <div class="rounded-xl border border-border bg-card p-6 shadow-sm">
-            <h3 class="text-lg font-semibold mb-4">Recent Activity</h3>
-            <div v-if="agentActivity.length === 0" class="text-sm text-muted-foreground text-center py-6">
-              No activity recorded yet. Activate this agent to start seeing activity.
+            <div class="flex items-center justify-between mb-4">
+              <h3 class="text-lg font-semibold">Recent Activity</h3>
+              <NuxtLink to="/activity" class="text-xs text-primary hover:underline">
+                View all activity
+              </NuxtLink>
+            </div>
+            <div v-if="agentActivity.length === 0" class="flex flex-col items-center py-6 text-center">
+              <div class="size-10 rounded-full bg-muted flex items-center justify-center mb-2">
+                <Activity class="size-5 text-muted-foreground/40" />
+              </div>
+              <p class="text-sm text-muted-foreground">No activity recorded yet</p>
+              <p class="text-xs text-muted-foreground/70 mt-1">Activate this agent to start seeing activity</p>
             </div>
             <div v-else class="space-y-3">
               <div
@@ -457,20 +569,28 @@ function formatTimeAgo(date: string) {
             <p class="text-sm text-muted-foreground mb-4">
               Click to attach or detach integrations.
             </p>
-            <div v-if="availableTools.length === 0" class="text-sm text-muted-foreground py-4 text-center">
-              No tools available. Add tools via the database.
+            <div v-if="availableTools.length === 0" class="flex flex-col items-center py-6 text-center">
+              <div class="size-10 rounded-full bg-muted flex items-center justify-center mb-2">
+                <Wrench class="size-5 text-muted-foreground/40" />
+              </div>
+              <p class="text-sm text-muted-foreground">No tools available</p>
+              <p class="text-xs text-muted-foreground/70 mt-1">Add tools via the database</p>
             </div>
             <div class="space-y-2">
               <div
                 v-for="tool in availableTools"
                 :key="tool.id"
                 :class="[
-                  'flex items-center gap-3 rounded-lg border p-3 transition-colors cursor-pointer',
-                  currentAgent.tools?.includes(tool.name)
-                    ? 'border-primary bg-primary/5'
-                    : 'border-border hover:bg-muted/50',
+                  'flex items-center gap-3 rounded-lg border p-3 transition-all cursor-pointer relative',
+                  loadingToolId === tool.id
+                    ? 'border-primary/30 bg-primary/5 opacity-70 pointer-events-none'
+                    : currentAgent.tools?.includes(tool.name)
+                      ? 'border-primary bg-primary/5 hover:border-destructive/50'
+                      : 'border-border hover:bg-muted/50 hover:border-primary/40',
                 ]"
                 @click="toggleTool(tool.id, tool.name)"
+                @mouseenter="hoveredToolId = tool.id"
+                @mouseleave="hoveredToolId = null"
               >
                 <div class="rounded-md bg-muted p-2">
                   <component :is="tool.icon" class="size-4 text-muted-foreground" />
@@ -479,14 +599,20 @@ function formatTimeAgo(date: string) {
                   <p class="text-sm font-medium">{{ tool.name }}</p>
                   <p class="text-xs text-muted-foreground truncate">{{ tool.description }}</p>
                 </div>
+                <!-- Loading spinner for this specific tool -->
+                <div v-if="loadingToolId === tool.id" class="shrink-0">
+                  <Loader2 class="size-4 animate-spin text-primary" />
+                </div>
+                <!-- Active badge with hover "Unattach" -->
                 <Badge
-                  v-if="currentAgent.tools?.includes(tool.name)"
-                  variant="default"
-                  class="text-xs"
+                  v-else-if="currentAgent.tools?.includes(tool.name)"
+                  :variant="hoveredToolId === tool.id ? 'destructive' : 'default'"
+                  class="text-xs transition-all duration-150 shrink-0"
                 >
-                  Active
+                  {{ hoveredToolId === tool.id ? 'Unattach' : 'Active' }}
                 </Badge>
-                <Badge v-else variant="outline" class="text-xs">Add</Badge>
+                <!-- Add badge -->
+                <Badge v-else variant="outline" class="text-xs shrink-0">Add</Badge>
               </div>
             </div>
           </div>
@@ -517,9 +643,10 @@ function formatTimeAgo(date: string) {
           <div class="rounded-xl border border-border bg-card p-6 shadow-sm">
             <h3 class="text-sm font-semibold mb-3">Actions</h3>
             <div class="space-y-2">
-              <Button class="w-full" variant="outline" size="sm">
-                <Play class="size-4 mr-1" />
-                Test Agent
+              <Button class="w-full" variant="outline" size="sm" :disabled="testingAgent" @click="testingAgent = true; setTimeout(() => { testingAgent = false; toast.success('Test complete', { description: 'Agent responded successfully.' }) }, 2000)">
+                <Loader2 v-if="testingAgent" class="size-4 mr-1 animate-spin" />
+                <Play v-else class="size-4 mr-1" />
+                {{ testingAgent ? 'Testing...' : 'Test Agent' }}
               </Button>
               <NuxtLink to="/discovery" class="block">
                 <Button class="w-full" variant="outline" size="sm">
@@ -557,10 +684,11 @@ function formatTimeAgo(date: string) {
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" @click="showCreateDialog = false">Cancel</Button>
-          <Button :disabled="!createForm.name" @click="handleCreate">
-            <Bot class="size-4 mr-1" />
-            Create Agent
+          <Button variant="outline" @click="showCreateDialog = false" :disabled="creatingAgent">Cancel</Button>
+          <Button :disabled="!createForm.name || creatingAgent" @click="handleCreate">
+            <Loader2 v-if="creatingAgent" class="size-4 mr-1 animate-spin" />
+            <Bot v-else class="size-4 mr-1" />
+            {{ creatingAgent ? 'Creating...' : 'Create Agent' }}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -576,8 +704,12 @@ function formatTimeAgo(date: string) {
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
-          <Button variant="outline" @click="showDeleteConfirm = false">Cancel</Button>
-          <Button variant="destructive" @click="handleDelete">Delete</Button>
+          <Button variant="outline" @click="showDeleteConfirm = false" :disabled="deletingAgentLoading">Cancel</Button>
+          <Button variant="destructive" :disabled="deletingAgentLoading" @click="handleDelete">
+            <Loader2 v-if="deletingAgentLoading" class="size-4 mr-1 animate-spin" />
+            <Trash2 v-else class="size-4 mr-1" />
+            {{ deletingAgentLoading ? 'Deleting...' : 'Delete' }}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

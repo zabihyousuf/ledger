@@ -10,7 +10,9 @@ import {
   Pause,
   Clock,
   Search,
+  Loader2,
 } from 'lucide-vue-next'
+import { toast } from 'vue-sonner'
 import type { Flow } from '~/composables/useFlows'
 
 const { flows, loading, fetchFlows, createFlow, deleteFlow, duplicateFlow, updateFlow } = useFlows()
@@ -53,17 +55,34 @@ function openCreateDialog() {
 }
 
 async function handleCreate() {
-  const flow = await createFlow({
-    name: createForm.value.name,
-    description: createForm.value.description || null,
-    status: 'draft',
-    trigger_type: createForm.value.trigger_type,
-  })
-  showCreateDialog.value = false
-  if (flow) {
-    router.push(`/flows/${flow.id}`)
+  if (creatingFlow.value) return
+  creatingFlow.value = true
+  try {
+    const flow = await createFlow({
+      name: createForm.value.name,
+      description: createForm.value.description || null,
+      status: 'draft',
+      trigger_type: createForm.value.trigger_type,
+    })
+    showCreateDialog.value = false
+    toast.success('Flow created', {
+      description: `"${createForm.value.name}" is ready to edit.`,
+    })
+    if (flow) {
+      router.push(`/flows/${flow.id}`)
+    }
+  } catch (error) {
+    toast.error('Failed to create flow')
+  } finally {
+    creatingFlow.value = false
   }
 }
+
+// ── Loading states ──
+const creatingFlow = ref(false)
+const deletingFlowLoading = ref(false)
+const duplicatingFlowId = ref<string | null>(null)
+const togglingStatusId = ref<string | null>(null)
 
 // ── Delete confirmation ──
 const showDeleteConfirm = ref(false)
@@ -75,25 +94,58 @@ function confirmDelete(flow: Flow) {
 }
 
 async function handleDelete() {
-  if (!deletingFlow.value) return
-  await deleteFlow(deletingFlow.value.id)
-  showDeleteConfirm.value = false
-  deletingFlow.value = null
+  if (!deletingFlow.value || deletingFlowLoading.value) return
+  deletingFlowLoading.value = true
+  try {
+    const name = deletingFlow.value.name
+    await deleteFlow(deletingFlow.value.id)
+    showDeleteConfirm.value = false
+    deletingFlow.value = null
+    toast.success('Flow deleted', {
+      description: `"${name}" has been removed.`,
+    })
+  } catch (error) {
+    toast.error('Failed to delete flow')
+  } finally {
+    deletingFlowLoading.value = false
+  }
 }
 
 // ── Duplicate ──
 async function handleDuplicate(flow: Flow) {
-  const newFlow = await duplicateFlow(flow.id)
-  if (newFlow) {
-    router.push(`/flows/${newFlow.id}`)
+  if (duplicatingFlowId.value) return
+  duplicatingFlowId.value = flow.id
+  try {
+    const newFlow = await duplicateFlow(flow.id)
+    toast.success('Flow duplicated', {
+      description: `Copy of "${flow.name}" created.`,
+    })
+    if (newFlow) {
+      router.push(`/flows/${newFlow.id}`)
+    }
+  } catch (error) {
+    toast.error('Failed to duplicate flow')
+  } finally {
+    duplicatingFlowId.value = null
   }
 }
 
 // ── Toggle status ──
 async function toggleStatus(flow: Flow) {
-  const newStatus = flow.status === 'active' ? 'draft' : 'active'
-  await updateFlow(flow.id, { status: newStatus })
-  await fetchFlows()
+  if (togglingStatusId.value) return
+  togglingStatusId.value = flow.id
+  try {
+    const newStatus = flow.status === 'active' ? 'draft' : 'active'
+    await updateFlow(flow.id, { status: newStatus })
+    await fetchFlows()
+    toast.success(newStatus === 'active' ? 'Flow activated' : 'Flow deactivated', {
+      description: `"${flow.name}" is now ${newStatus}.`,
+    })
+  } catch (error) {
+    toast.error('Failed to update flow status')
+  } finally {
+    togglingStatusId.value = null
+  }
 }
 
 function formatDate(date: string) {
@@ -265,8 +317,11 @@ function statusVariant(status: string): 'default' | 'secondary' | 'outline' | 'd
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" @click="showCreateDialog = false">Cancel</Button>
-          <Button :disabled="!createForm.name" @click="handleCreate">Create & Edit</Button>
+          <Button variant="outline" @click="showCreateDialog = false" :disabled="creatingFlow">Cancel</Button>
+          <Button :disabled="!createForm.name || creatingFlow" @click="handleCreate">
+            <Loader2 v-if="creatingFlow" class="size-4 mr-1 animate-spin" />
+            {{ creatingFlow ? 'Creating...' : 'Create & Edit' }}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -281,8 +336,11 @@ function statusVariant(status: string): 'default' | 'secondary' | 'outline' | 'd
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
-          <Button variant="outline" @click="showDeleteConfirm = false">Cancel</Button>
-          <Button variant="destructive" @click="handleDelete">Delete</Button>
+          <Button variant="outline" @click="showDeleteConfirm = false" :disabled="deletingFlowLoading">Cancel</Button>
+          <Button variant="destructive" :disabled="deletingFlowLoading" @click="handleDelete">
+            <Loader2 v-if="deletingFlowLoading" class="size-4 mr-1 animate-spin" />
+            {{ deletingFlowLoading ? 'Deleting...' : 'Delete' }}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

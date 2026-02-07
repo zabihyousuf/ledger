@@ -9,6 +9,7 @@ import {
   Workflow,
   Bot,
   Radar,
+  Activity,
   type LucideIcon,
 } from 'lucide-vue-next'
 
@@ -37,6 +38,7 @@ export function useCrmNavigation(): NavGroup[] {
       items: [
         { title: 'Discovery', url: '/discovery', icon: Radar },
         { title: 'Agents', url: '/agents', icon: Bot },
+        { title: 'Activity', url: '/activity', icon: Activity },
       ],
     },
     {

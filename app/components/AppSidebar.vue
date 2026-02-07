@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Zap, PanelLeftClose, PanelLeftOpen } from 'lucide-vue-next'
+import { Zap, PanelLeftClose, PanelLeftOpen, Bug, Loader2 } from 'lucide-vue-next'
 import {
   Sidebar,
   SidebarContent,
@@ -15,11 +15,27 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { toast } from 'vue-sonner'
 
 const { toggleSidebar, state } = useSidebar()
 const navGroups = useCrmNavigation()
 const route = useRoute()
 const isHovered = ref(false)
+
+// Bug report
+const showBugDialog = ref(false)
+const bugTitle = ref('')
+const bugDescription = ref('')
+const { submitReport, submitting } = useBugReports()
+
+async function handleSubmitBug() {
+  if (!bugTitle.value.trim()) return
+  await submitReport(bugTitle.value.trim(), bugDescription.value.trim())
+  bugTitle.value = ''
+  bugDescription.value = ''
+  showBugDialog.value = false
+  toast.success('Bug report submitted', { description: 'Thanks for helping us improve.' })
+}
 </script>
 
 <template>
@@ -66,7 +82,7 @@ const isHovered = ref(false)
           <SidebarMenuItem v-for="item in group.items" :key="item.title">
             <SidebarMenuButton
               as-child
-              :is-active="route.path === item.url"
+              :is-active="route.path === item.url || (item.url !== '/' && route.path.startsWith(item.url))"
             >
               <NuxtLink :to="item.url">
                 <component :is="item.icon" />
@@ -94,6 +110,13 @@ const isHovered = ref(false)
                 user@example.com
               </span>
             </div>
+            <button
+              class="shrink-0 rounded-md p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+              @click.prevent.stop="showBugDialog = true"
+              title="Report a bug"
+            >
+              <Bug class="size-3.5" />
+            </button>
           </SidebarMenuButton>
         </SidebarMenuItem>
       </SidebarMenu>
@@ -101,6 +124,57 @@ const isHovered = ref(false)
 
     <SidebarRail />
   </Sidebar>
+
+  <!-- Bug Report Dialog -->
+  <Dialog :open="showBugDialog" @update:open="showBugDialog = $event">
+    <DialogContent class="sm:max-w-[500px]">
+      <DialogHeader>
+        <DialogTitle>Report a Bug</DialogTitle>
+        <DialogDescription>
+          Describe the issue you're experiencing. Page context is captured automatically.
+        </DialogDescription>
+      </DialogHeader>
+      <div class="grid gap-4 py-4">
+        <div class="rounded-lg bg-muted/50 border border-border p-3">
+          <p class="text-[11px] font-medium text-muted-foreground uppercase tracking-wider mb-2">Auto-captured</p>
+          <div class="grid grid-cols-2 gap-2 text-xs">
+            <div>
+              <span class="text-muted-foreground">Page: </span>
+              <span class="font-medium">{{ route.path }}</span>
+            </div>
+            <div>
+              <span class="text-muted-foreground">Viewport: </span>
+              <span class="font-medium">{{ typeof window !== 'undefined' ? `${window.innerWidth}×${window.innerHeight}` : '' }}</span>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <label class="text-sm font-medium mb-1.5 block">Title *</label>
+          <Input v-model="bugTitle" placeholder="Brief summary of the issue" />
+        </div>
+        <div>
+          <label class="text-sm font-medium mb-1.5 block">Description</label>
+          <Textarea
+            v-model="bugDescription"
+            placeholder="Steps to reproduce, what you expected vs what happened..."
+            rows="4"
+          />
+        </div>
+      </div>
+      <DialogFooter>
+        <Button variant="outline" @click="showBugDialog = false">Cancel</Button>
+        <Button
+          :disabled="!bugTitle.trim() || submitting"
+          variant="destructive"
+          @click="handleSubmitBug"
+        >
+          <Loader2 v-if="submitting" class="size-4 mr-1 animate-spin" />
+          {{ submitting ? 'Submitting...' : 'Submit Report' }}
+        </Button>
+      </DialogFooter>
+    </DialogContent>
+  </Dialog>
 </template>
 
 <style scoped>

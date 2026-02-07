@@ -9,7 +9,9 @@ import {
   Calendar,
   LayoutGrid,
   List,
+  Loader2,
 } from 'lucide-vue-next'
+import { toast } from 'vue-sonner'
 import type { Deal, DealInsert } from '~/composables/useDeals'
 
 const { deals, loading, pipelineStages, fetchDeals, createDeal, updateDeal, deleteDeal } = useDeals()
@@ -70,7 +72,18 @@ async function onDrop(e: DragEvent, newStage: string) {
   const deal = deals.value.find(d => d.id === dealId)
   if (!deal || deal.stage === newStage) return
 
-  await updateDeal(dealId, { stage: newStage })
+  droppingDealId.value = dealId
+  try {
+    await updateDeal(dealId, { stage: newStage })
+    const stageLabel = stages.find(s => s.key === newStage)?.label || newStage
+    toast.success('Deal moved', {
+      description: `"${deal.title}" moved to ${stageLabel}.`,
+    })
+  } catch (error) {
+    toast.error('Failed to move deal')
+  } finally {
+    droppingDealId.value = null
+  }
 }
 
 // ── Dialog state ──
@@ -78,6 +91,9 @@ const showDialog = ref(false)
 const editingDeal = ref<Deal | null>(null)
 const showDeleteConfirm = ref(false)
 const deletingDeal = ref<Deal | null>(null)
+const savingDeal = ref(false)
+const deletingDealLoading = ref(false)
+const droppingDealId = ref<string | null>(null)
 
 const form = ref({
   title: '',
@@ -115,21 +131,35 @@ function openEditDialog(deal: Deal) {
 }
 
 async function saveDeal() {
-  const payload: DealInsert = {
-    title: form.value.title,
-    value: form.value.value,
-    stage: form.value.stage,
-    probability: form.value.probability ?? null,
-    expected_close_date: form.value.expected_close_date || null,
-    notes: form.value.notes || null,
-  }
+  if (savingDeal.value) return
+  savingDeal.value = true
+  try {
+    const payload: DealInsert = {
+      title: form.value.title,
+      value: form.value.value,
+      stage: form.value.stage,
+      probability: form.value.probability ?? null,
+      expected_close_date: form.value.expected_close_date || null,
+      notes: form.value.notes || null,
+    }
 
-  if (editingDeal.value) {
-    await updateDeal(editingDeal.value.id, payload)
-  } else {
-    await createDeal(payload)
+    if (editingDeal.value) {
+      await updateDeal(editingDeal.value.id, payload)
+      toast.success('Deal updated', {
+        description: `"${payload.title}" has been saved.`,
+      })
+    } else {
+      await createDeal(payload)
+      toast.success('Deal created', {
+        description: `"${payload.title}" has been added.`,
+      })
+    }
+    showDialog.value = false
+  } catch (error) {
+    toast.error('Failed to save deal')
+  } finally {
+    savingDeal.value = false
   }
-  showDialog.value = false
 }
 
 function confirmDelete(deal: Deal) {
@@ -138,10 +168,21 @@ function confirmDelete(deal: Deal) {
 }
 
 async function handleDelete() {
-  if (!deletingDeal.value) return
-  await deleteDeal(deletingDeal.value.id)
-  showDeleteConfirm.value = false
-  deletingDeal.value = null
+  if (!deletingDeal.value || deletingDealLoading.value) return
+  deletingDealLoading.value = true
+  try {
+    const title = deletingDeal.value.title
+    await deleteDeal(deletingDeal.value.id)
+    showDeleteConfirm.value = false
+    deletingDeal.value = null
+    toast.success('Deal deleted', {
+      description: `"${title}" has been removed.`,
+    })
+  } catch (error) {
+    toast.error('Failed to delete deal')
+  } finally {
+    deletingDealLoading.value = false
+  }
 }
 
 function formatCurrency(val: number) {
@@ -233,7 +274,10 @@ const totalDeals = computed(() => deals.value.length)
               v-for="deal in dealsByStage(stage.key)"
               :key="deal.id"
               draggable="true"
-              class="rounded-lg border border-border bg-card p-3 shadow-sm cursor-grab active:cursor-grabbing hover:shadow-md transition-shadow"
+              :class="[
+                'rounded-lg border border-border bg-card p-3 shadow-sm cursor-grab active:cursor-grabbing hover:shadow-md transition-shadow',
+                droppingDealId === deal.id ? 'opacity-50 pointer-events-none' : '',
+              ]"
               @dragstart="(e) => onDragStart(e, deal.id)"
             >
               <div class="flex items-start justify-between mb-2">
@@ -413,9 +457,10 @@ const totalDeals = computed(() => deals.value.length)
         </div>
 
         <DialogFooter>
-          <Button variant="outline" @click="showDialog = false">Cancel</Button>
-          <Button :disabled="!form.title || !form.value" @click="saveDeal">
-            {{ editingDeal ? 'Update' : 'Create' }}
+          <Button variant="outline" @click="showDialog = false" :disabled="savingDeal">Cancel</Button>
+          <Button :disabled="!form.title || !form.value || savingDeal" @click="saveDeal">
+            <Loader2 v-if="savingDeal" class="size-4 mr-1 animate-spin" />
+            {{ savingDeal ? 'Saving...' : (editingDeal ? 'Update' : 'Create') }}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -431,8 +476,11 @@ const totalDeals = computed(() => deals.value.length)
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
-          <Button variant="outline" @click="showDeleteConfirm = false">Cancel</Button>
-          <Button variant="destructive" @click="handleDelete">Delete</Button>
+          <Button variant="outline" @click="showDeleteConfirm = false" :disabled="deletingDealLoading">Cancel</Button>
+          <Button variant="destructive" :disabled="deletingDealLoading" @click="handleDelete">
+            <Loader2 v-if="deletingDealLoading" class="size-4 mr-1 animate-spin" />
+            {{ deletingDealLoading ? 'Deleting...' : 'Delete' }}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

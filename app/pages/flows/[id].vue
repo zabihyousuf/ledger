@@ -5,6 +5,7 @@ import {
   Trash2, ChevronLeft, Play, X, Pencil, Check,
   MousePointer2,
 } from 'lucide-vue-next'
+import { toast } from 'vue-sonner'
 import type { Flow } from '~/composables/useFlows'
 
 const route = useRoute()
@@ -81,9 +82,16 @@ function startEditName() {
 
 async function saveName() {
   if (!flow.value || !editNameValue.value.trim()) return
-  await updateFlow(flow.value.id, { name: editNameValue.value.trim() })
-  flow.value = { ...flow.value, name: editNameValue.value.trim() }
-  editingName.value = false
+  try {
+    await updateFlow(flow.value.id, { name: editNameValue.value.trim() })
+    flow.value = { ...flow.value, name: editNameValue.value.trim() }
+    editingName.value = false
+    toast.success('Flow renamed', {
+      description: `Flow is now "${editNameValue.value.trim()}".`,
+    })
+  } catch (error) {
+    toast.error('Failed to rename flow')
+  }
 }
 
 // ── Canvas constants ──
@@ -199,8 +207,15 @@ async function handleSave() {
       label: c.label || null,
     }))
 
-  await saveFlowData(flow.value.id, nodesData, connectionsData, new Map())
-  hasUnsavedChanges.value = false
+  try {
+    await saveFlowData(flow.value.id, nodesData, connectionsData, new Map())
+    hasUnsavedChanges.value = false
+    toast.success('Flow saved', {
+      description: `"${flow.value.name}" has been saved with ${nodes.value.length} nodes.`,
+    })
+  } catch (error) {
+    toast.error('Failed to save flow')
+  }
   saving.value = false
 }
 
@@ -543,6 +558,22 @@ function onKeyDown(e: KeyboardEvent) {
   }
 }
 
+// ── Activate flow ──
+async function handleActivate() {
+  if (!flow.value) return
+  try {
+    const f = await updateFlow(flow.value.id, { status: 'active' })
+    if (f) {
+      flow.value = f
+      toast.success('Flow activated', {
+        description: `"${f.name}" is now active.`,
+      })
+    }
+  } catch (error) {
+    toast.error('Failed to activate flow')
+  }
+}
+
 // ── Fit to view ──
 function fitToView() {
   if (nodes.value.length === 0) {
@@ -630,7 +661,7 @@ function fitToView() {
 
         <div class="w-px h-5 bg-border" />
 
-        <Button variant="outline" size="sm" :disabled="flow?.status === 'active'" @click="flow && updateFlow(flow.id, { status: 'active' }).then(f => { if (f) flow = f })">
+        <Button variant="outline" size="sm" :disabled="flow?.status === 'active'" @click="handleActivate">
           <Play class="size-4 mr-1" />
           Activate
         </Button>

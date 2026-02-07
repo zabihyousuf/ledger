@@ -393,6 +393,217 @@ export interface Database {
           created_at?: string
         }
       }
+      discovery_campaigns: {
+        Row: {
+          id: string
+          name: string
+          status: string
+          target_industry: string
+          target_roles: string[]
+          target_company_size: string
+          target_region: string
+          search_criteria: string
+          agent_id: string | null
+          leads_found: number
+          leads_approved: number
+          leads_rejected: number
+          confidence_threshold: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          name: string
+          status?: string
+          target_industry: string
+          target_roles: string[]
+          target_company_size: string
+          target_region: string
+          search_criteria: string
+          agent_id?: string | null
+          leads_found?: number
+          leads_approved?: number
+          leads_rejected?: number
+          confidence_threshold?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          name?: string
+          status?: string
+          target_industry?: string
+          target_roles?: string[]
+          target_company_size?: string
+          target_region?: string
+          search_criteria?: string
+          agent_id?: string | null
+          leads_found?: number
+          leads_approved?: number
+          leads_rejected?: number
+          confidence_threshold?: number
+          created_at?: string
+          updated_at?: string
+        }
+      }
+      discovered_leads: {
+        Row: {
+          id: string
+          campaign_id: string
+          name: string
+          email: string | null
+          company: string | null
+          position: string | null
+          linkedin_url: string | null
+          confidence_score: number
+          discovery_source: string
+          status: string
+          ai_summary: string
+          signals: string[]
+          discovered_at: string
+        }
+        Insert: {
+          id?: string
+          campaign_id: string
+          name: string
+          email?: string | null
+          company?: string | null
+          position?: string | null
+          linkedin_url?: string | null
+          confidence_score: number
+          discovery_source: string
+          status?: string
+          ai_summary: string
+          signals?: string[]
+          discovered_at?: string
+        }
+        Update: {
+          id?: string
+          campaign_id?: string
+          name?: string
+          email?: string | null
+          company?: string | null
+          position?: string | null
+          linkedin_url?: string | null
+          confidence_score?: number
+          discovery_source?: string
+          status?: string
+          ai_summary?: string
+          signals?: string[]
+          discovered_at?: string
+        }
+      }
+      agent_activities: {
+        Row: {
+          id: string
+          agent_id: string
+          agent_name: string
+          campaign_id: string | null
+          action: string
+          detail: string
+          status: string
+          timestamp: string
+        }
+        Insert: {
+          id?: string
+          agent_id: string
+          agent_name: string
+          campaign_id?: string | null
+          action: string
+          detail: string
+          status?: string
+          timestamp?: string
+        }
+        Update: {
+          id?: string
+          agent_id?: string
+          agent_name?: string
+          campaign_id?: string | null
+          action?: string
+          detail?: string
+          status?: string
+          timestamp?: string
+        }
+      }
+      bug_reports: {
+        Row: {
+          id: string
+          title: string
+          description: string
+          page_url: string
+          screenshot_data: string | null
+          browser_info: string
+          viewport: string
+          console_errors: string[]
+          status: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          title: string
+          description?: string
+          page_url: string
+          screenshot_data?: string | null
+          browser_info: string
+          viewport: string
+          console_errors?: string[]
+          status?: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          title?: string
+          description?: string
+          page_url?: string
+          screenshot_data?: string | null
+          browser_info?: string
+          viewport?: string
+          console_errors?: string[]
+          status?: string
+          created_at?: string
+        }
+      }
+      documents: {
+        Row: {
+          id: string
+          name: string
+          type: string
+          status: string
+          size: number
+          deal_id: string | null
+          contact_id: string | null
+          file_url: string | null
+          notes: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          name: string
+          type?: string
+          status?: string
+          size?: number
+          deal_id?: string | null
+          contact_id?: string | null
+          file_url?: string | null
+          notes?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          name?: string
+          type?: string
+          status?: string
+          size?: number
+          deal_id?: string | null
+          contact_id?: string | null
+          file_url?: string | null
+          notes?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+      }
     }
   }
 }

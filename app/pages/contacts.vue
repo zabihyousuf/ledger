@@ -11,7 +11,9 @@ import {
   Mail,
   Phone,
   Building2,
+  Loader2,
 } from 'lucide-vue-next'
+import { toast } from 'vue-sonner'
 import type { Contact, ContactInsert } from '~/composables/useContacts'
 
 const { contacts, loading, fetchContacts, createContact, updateContact, deleteContact } = useContacts()
@@ -75,6 +77,8 @@ const showDialog = ref(false)
 const editingContact = ref<Contact | null>(null)
 const showDeleteConfirm = ref(false)
 const deletingContact = ref<Contact | null>(null)
+const savingContact = ref(false)
+const deletingContactLoading = ref(false)
 
 const form = ref({
   first_name: '',
@@ -124,29 +128,43 @@ function openEditDialog(contact: Contact) {
 }
 
 async function saveContact() {
-  const tagsArray = form.value.tags
-    ? form.value.tags.split(',').map(t => t.trim()).filter(Boolean)
-    : null
+  if (savingContact.value) return
+  savingContact.value = true
+  try {
+    const tagsArray = form.value.tags
+      ? form.value.tags.split(',').map(t => t.trim()).filter(Boolean)
+      : null
 
-  const payload: ContactInsert = {
-    first_name: form.value.first_name,
-    last_name: form.value.last_name,
-    email: form.value.email,
-    phone: form.value.phone || null,
-    company: form.value.company || null,
-    position: form.value.position || null,
-    linkedin_url: form.value.linkedin_url || null,
-    twitter_url: form.value.twitter_url || null,
-    tags: tagsArray,
-    notes: form.value.notes || null,
-  }
+    const payload: ContactInsert = {
+      first_name: form.value.first_name,
+      last_name: form.value.last_name,
+      email: form.value.email,
+      phone: form.value.phone || null,
+      company: form.value.company || null,
+      position: form.value.position || null,
+      linkedin_url: form.value.linkedin_url || null,
+      twitter_url: form.value.twitter_url || null,
+      tags: tagsArray,
+      notes: form.value.notes || null,
+    }
 
-  if (editingContact.value) {
-    await updateContact(editingContact.value.id, payload)
-  } else {
-    await createContact(payload)
+    if (editingContact.value) {
+      await updateContact(editingContact.value.id, payload)
+      toast.success('Contact updated', {
+        description: `"${payload.first_name} ${payload.last_name}" has been saved.`,
+      })
+    } else {
+      await createContact(payload)
+      toast.success('Contact created', {
+        description: `"${payload.first_name} ${payload.last_name}" has been added.`,
+      })
+    }
+    showDialog.value = false
+  } catch (error) {
+    toast.error('Failed to save contact')
+  } finally {
+    savingContact.value = false
   }
-  showDialog.value = false
 }
 
 function confirmDelete(contact: Contact) {
@@ -155,10 +173,21 @@ function confirmDelete(contact: Contact) {
 }
 
 async function handleDelete() {
-  if (!deletingContact.value) return
-  await deleteContact(deletingContact.value.id)
-  showDeleteConfirm.value = false
-  deletingContact.value = null
+  if (!deletingContact.value || deletingContactLoading.value) return
+  deletingContactLoading.value = true
+  try {
+    const name = `${deletingContact.value.first_name} ${deletingContact.value.last_name}`
+    await deleteContact(deletingContact.value.id)
+    showDeleteConfirm.value = false
+    deletingContact.value = null
+    toast.success('Contact deleted', {
+      description: `"${name}" has been removed.`,
+    })
+  } catch (error) {
+    toast.error('Failed to delete contact')
+  } finally {
+    deletingContactLoading.value = false
+  }
 }
 
 function formatDate(date: string) {
@@ -380,9 +409,10 @@ function getInitials(first: string, last: string) {
         </div>
 
         <DialogFooter>
-          <Button variant="outline" @click="showDialog = false">Cancel</Button>
-          <Button :disabled="!form.first_name || !form.last_name || !form.email" @click="saveContact">
-            {{ editingContact ? 'Update' : 'Create' }}
+          <Button variant="outline" @click="showDialog = false" :disabled="savingContact">Cancel</Button>
+          <Button :disabled="!form.first_name || !form.last_name || !form.email || savingContact" @click="saveContact">
+            <Loader2 v-if="savingContact" class="size-4 mr-1 animate-spin" />
+            {{ savingContact ? 'Saving...' : (editingContact ? 'Update' : 'Create') }}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -398,8 +428,11 @@ function getInitials(first: string, last: string) {
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
-          <Button variant="outline" @click="showDeleteConfirm = false">Cancel</Button>
-          <Button variant="destructive" @click="handleDelete">Delete</Button>
+          <Button variant="outline" @click="showDeleteConfirm = false" :disabled="deletingContactLoading">Cancel</Button>
+          <Button variant="destructive" :disabled="deletingContactLoading" @click="handleDelete">
+            <Loader2 v-if="deletingContactLoading" class="size-4 mr-1 animate-spin" />
+            {{ deletingContactLoading ? 'Deleting...' : 'Delete' }}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -51,6 +51,20 @@ export function useLeads() {
           related_to_type: 'lead',
           related_to_id: data.id,
         })
+
+        // Emit event for flow triggers (fire-and-forget)
+        $fetch('/api/flows/emit-event', {
+          method: 'POST',
+          body: {
+            event: 'lead/created',
+            data: {
+              leadId: data.id,
+              leadName: data.name,
+              leadEmail: data.email,
+              leadCompany: data.company,
+            },
+          },
+        }).catch(() => {}) // Don't block on flow trigger failures
       }
 
       await fetchLeads()

@@ -45,6 +45,7 @@ const {
   loading,
   fetchCampaigns,
   createCampaign,
+  updateCampaign,
   fetchDiscoveredLeads,
   fetchAgentActivities,
   getCampaignLeads,
@@ -59,9 +60,107 @@ const {
   activeCampaigns,
 } = useDiscovery()
 
+// ── Agents for campaign assignment ──
+const {
+  agents: availableAgents,
+  fetchAgents,
+} = useAgents()
+
+// ── Campaign Run Controls ──
+const {
+  starting,
+  stopping,
+  testing,
+  startCampaign: startCampaignApi,
+  stopCampaign: stopCampaignApi,
+  testCampaign: testCampaignApi,
+  fetchRunStatus,
+} = useCampaignRuns()
+
+// ── Live Realtime Updates ──
+const liveCampaignId = ref<string | null>(null)
+const { liveSteps, liveLeads, runStatus, latestRun } = useCampaignLive(liveCampaignId)
+
 onMounted(async () => {
   await fetchCampaigns()
-  await Promise.all([fetchDiscoveredLeads(), fetchAgentActivities()])
+  await Promise.all([fetchDiscoveredLeads(), fetchAgentActivities(), fetchAgents()])
+})
+
+// ── Campaign Actions ──
+async function handleStartCampaign(campaignId: string) {
+  try {
+    await startCampaignApi(campaignId)
+    await fetchCampaigns()
+    toast.success('Campaign started', {
+      description: 'AI agents are now discovering leads.',
+    })
+  } catch (error: any) {
+    toast.error('Failed to start campaign', {
+      description: error?.data?.message || error?.message || 'Please try again.',
+    })
+  }
+}
+
+async function handleStopCampaign(campaignId: string) {
+  try {
+    await stopCampaignApi(campaignId)
+    await fetchCampaigns()
+    toast.success('Campaign paused', {
+      description: 'AI agents have been stopped.',
+    })
+  } catch (error: any) {
+    toast.error('Failed to stop campaign', {
+      description: error?.data?.message || error?.message || 'Please try again.',
+    })
+  }
+}
+
+async function handleTestCampaign(campaignId: string) {
+  try {
+    const result = await testCampaignApi(campaignId) as any
+    if (result.success) {
+      const working = Object.entries(result.results as Record<string, { ok: boolean }>)
+        .filter(([, v]) => v.ok)
+        .map(([k]) => k)
+      toast.success('Tools verified', {
+        description: `${working.length} tool(s) working: ${working.join(', ')}`,
+      })
+    } else {
+      toast.error('Some tools failed', {
+        description: 'Check your API keys in Settings.',
+      })
+    }
+  } catch (error: any) {
+    toast.error('Test failed', {
+      description: error?.data?.message || error?.message || 'Please try again.',
+    })
+  }
+}
+
+// ── Auto-refresh when live leads arrive ──
+watch(liveLeads, (newLeads) => {
+  if (newLeads.length > 0) {
+    fetchDiscoveredLeads()
+    fetchCampaigns()
+  }
+}, { deep: true })
+
+// ── Auto-refresh when run status changes ──
+watch(runStatus, (newStatus) => {
+  if (newStatus === 'completed' || newStatus === 'failed') {
+    fetchCampaigns()
+    fetchDiscoveredLeads()
+    fetchAgentActivities()
+    if (newStatus === 'completed') {
+      toast.success('Campaign run completed!', {
+        description: `${liveLeads.value.length} leads discovered.`,
+      })
+    } else {
+      toast.error('Campaign run failed', {
+        description: 'Check the activity log for details.',
+      })
+    }
+  }
 })
 
 // ── View State ──
@@ -158,6 +257,7 @@ const filteredCampaignLeads = computed(() => {
 // ── Navigation ──
 function openCampaign(id: string) {
   selectedCampaignId.value = id
+  liveCampaignId.value = id
   campaignLeadFilter.value = 'all'
   viewMode.value = 'campaign'
 }
@@ -170,6 +270,7 @@ function openReview() {
 function backToOverview() {
   viewMode.value = 'overview'
   selectedCampaignId.value = null
+  liveCampaignId.value = null
 }
 
 function openLeadDetail(lead: DiscoveredLead) {
@@ -210,9 +311,27 @@ const createForm = ref({
   target_region: 'North America',
   search_criteria: '',
   confidence_threshold: 70,
+  agent_ids: [] as string[],
 })
 
 const creatingCampaign = ref(false)
+
+function toggleAgentSelection(agentId: string) {
+  const idx = createForm.value.agent_ids.indexOf(agentId)
+  if (idx >= 0) {
+    createForm.value.agent_ids.splice(idx, 1)
+  } else {
+    createForm.value.agent_ids.push(agentId)
+  }
+}
+
+// Get agent capabilities summary for display
+function getAgentCapabilitySummary(agent: { skills?: string[]; tools?: string[] }) {
+  const parts: string[] = []
+  if (agent.skills && agent.skills.length > 0) parts.push(`${agent.skills.length} skill${agent.skills.length > 1 ? 's' : ''}`)
+  if (agent.tools && agent.tools.length > 0) parts.push(`${agent.tools.length} tool${agent.tools.length > 1 ? 's' : ''}`)
+  return parts.length > 0 ? parts.join(', ') : 'No skills or tools'
+}
 
 async function handleCreateCampaign() {
   if (creatingCampaign.value) return
@@ -227,10 +346,12 @@ async function handleCreateCampaign() {
       target_region: createForm.value.target_region,
       search_criteria: createForm.value.search_criteria,
       confidence_threshold: createForm.value.confidence_threshold,
+      agent_id: createForm.value.agent_ids[0] || null,
+      agent_ids: createForm.value.agent_ids,
     })
     showCreateDialog.value = false
     toast.success('Campaign created', {
-      description: `"${createForm.value.name}" is ready to launch.`,
+      description: `"${createForm.value.name}" is ready to launch with ${createForm.value.agent_ids.length} agent(s).`,
     })
     createForm.value = {
       name: '',
@@ -240,6 +361,7 @@ async function handleCreateCampaign() {
       target_region: 'North America',
       search_criteria: '',
       confidence_threshold: 70,
+      agent_ids: [],
     }
   } catch (error) {
     toast.error('Failed to create campaign')
@@ -523,7 +645,22 @@ const regions = ['North America', 'Europe', 'Asia Pacific', 'Global', 'United St
                   </div>
                 </div>
 
-                <!-- Footer Tags -->
+                <!-- Assigned Agents -->
+                <div v-if="(campaign as any).agent_ids?.length > 0" class="flex items-center gap-1.5 mt-3 flex-wrap">
+                  <Bot class="size-3 text-muted-foreground shrink-0" />
+                  <span
+                    v-for="aid in (campaign as any).agent_ids.slice(0, 3)"
+                    :key="aid"
+                    class="px-1.5 py-0.5 rounded-md bg-primary/5 border border-primary/10 text-[9px] font-medium text-primary"
+                  >
+                    {{ availableAgents.find(a => a.id === aid)?.name || 'Agent' }}
+                  </span>
+                  <span v-if="(campaign as any).agent_ids.length > 3" class="text-[9px] text-muted-foreground">
+                    +{{ (campaign as any).agent_ids.length - 3 }} more
+                  </span>
+                </div>
+
+                <!-- Footer Tags & Quick Actions -->
                 <div class="flex items-center gap-3 mt-4 pt-3 border-t border-border text-[10px] text-muted-foreground">
                   <span class="flex items-center gap-1">
                     <MapPin class="size-3" />
@@ -533,7 +670,26 @@ const regions = ['North America', 'Europe', 'Asia Pacific', 'Global', 'United St
                     <Building2 class="size-3" />
                     {{ campaign.target_company_size }}
                   </span>
-                  <ChevronRight class="size-3.5 ml-auto text-muted-foreground/50 group-hover:text-primary group-hover:translate-x-0.5 transition-all" />
+                  <div class="flex items-center gap-1 ml-auto" @click.stop>
+                    <button
+                      v-if="campaign.status === 'running'"
+                      class="flex items-center gap-1 px-2 py-1 rounded-md text-amber-600 hover:bg-amber-500/10 transition-colors"
+                      :disabled="stopping"
+                      @click="handleStopCampaign(campaign.id)"
+                    >
+                      <Pause class="size-3" />
+                      <span>Pause</span>
+                    </button>
+                    <button
+                      v-else-if="campaign.status !== 'running'"
+                      class="flex items-center gap-1 px-2 py-1 rounded-md text-emerald-600 hover:bg-emerald-500/10 transition-colors"
+                      :disabled="starting"
+                      @click="handleStartCampaign(campaign.id)"
+                    >
+                      <Play class="size-3" />
+                      <span>Start</span>
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -744,24 +900,63 @@ const regions = ['North America', 'Europe', 'Asia Pacific', 'Global', 'United St
                     <span class="capitalize">{{ selectedCampaign.status }}</span>
                   </div>
                 </div>
-                <p class="text-sm text-muted-foreground max-w-xl">{{ selectedCampaign.search_criteria }}</p>
+                <div class="flex items-center gap-2 mt-1">
+                  <p class="text-sm text-muted-foreground max-w-xl">{{ selectedCampaign.search_criteria }}</p>
+                </div>
+                <div class="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                  <template v-if="(selectedCampaign as any).agent_ids?.length > 0">
+                    <div
+                      v-for="aid in (selectedCampaign as any).agent_ids"
+                      :key="aid"
+                      class="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-primary/5 border border-primary/10 text-[10px] font-medium text-primary"
+                    >
+                      <Bot class="size-3" />
+                      {{ availableAgents.find(a => a.id === aid)?.name || 'Agent' }}
+                    </div>
+                  </template>
+                  <div v-else-if="selectedCampaign.agent_id" class="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-primary/5 border border-primary/10 text-[10px] font-medium text-primary">
+                    <Bot class="size-3" />
+                    {{ availableAgents.find(a => a.id === selectedCampaign.agent_id)?.name || 'Unknown Agent' }}
+                  </div>
+                  <div v-else class="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-muted/50 border border-border text-[10px] font-medium text-muted-foreground">
+                    <Bot class="size-3" />
+                    Default Pipeline
+                  </div>
+                </div>
               </div>
             </div>
             <div class="flex items-center gap-2 shrink-0">
               <Button
+                v-if="selectedCampaign.status !== 'running'"
+                variant="outline"
+                size="sm"
+                :disabled="testing"
+                @click.stop="handleTestCampaign(selectedCampaign.id)"
+              >
+                <Loader2 v-if="testing" class="size-4 mr-1.5 animate-spin" />
+                <Zap v-else class="size-4 mr-1.5" />
+                {{ testing ? 'Testing...' : 'Test Tools' }}
+              </Button>
+              <Button
                 v-if="selectedCampaign.status === 'running'"
                 variant="outline"
                 size="sm"
-                @click="updateCampaign(selectedCampaign.id, { status: 'paused' })"
+                :disabled="stopping"
+                @click.stop="handleStopCampaign(selectedCampaign.id)"
               >
-                <Pause class="size-4 mr-1.5" /> Pause
+                <Loader2 v-if="stopping" class="size-4 mr-1.5 animate-spin" />
+                <Pause v-else class="size-4 mr-1.5" />
+                {{ stopping ? 'Stopping...' : 'Pause' }}
               </Button>
               <Button
                 v-else
                 size="sm"
-                @click="updateCampaign(selectedCampaign.id, { status: 'running' })"
+                :disabled="starting"
+                @click.stop="handleStartCampaign(selectedCampaign.id)"
               >
-                <Play class="size-4 mr-1.5" /> Start
+                <Loader2 v-if="starting" class="size-4 mr-1.5 animate-spin" />
+                <Play v-else class="size-4 mr-1.5" />
+                {{ starting ? 'Starting...' : 'Start' }}
               </Button>
             </div>
           </div>
@@ -858,6 +1053,84 @@ const regions = ['North America', 'Europe', 'Asia Pacific', 'Global', 'United St
               class="h-full rounded-full bg-gradient-to-r from-primary to-indigo-400 transition-all duration-500"
               :style="{ width: `${progressPercent(selectedCampaign)}%` }"
             />
+          </div>
+        </div>
+      </div>
+
+      <!-- Live Agent Activity Panel (when campaign is running) -->
+      <div
+        v-if="selectedCampaign.status === 'running' || liveSteps.length > 0"
+        class="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-5 mb-6"
+      >
+        <div class="flex items-center justify-between mb-4">
+          <div class="flex items-center gap-2.5">
+            <div class="relative">
+              <div class="size-9 rounded-lg bg-emerald-500/15 flex items-center justify-center">
+                <Bot class="size-5 text-emerald-600" />
+              </div>
+              <span v-if="selectedCampaign.status === 'running'" class="absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full bg-emerald-500 animate-pulse border-2 border-background" />
+            </div>
+            <div>
+              <p class="text-sm font-semibold text-emerald-700">Live Agent Feed</p>
+              <p class="text-[10px] text-emerald-600/70">
+                {{ selectedCampaign.status === 'running' ? 'Agents are actively working' : 'Run completed' }}
+                <span v-if="latestRun">· {{ latestRun.status }}</span>
+              </p>
+            </div>
+          </div>
+          <div v-if="liveSteps.length > 0" class="text-xs text-emerald-600 font-medium">
+            {{ liveSteps.length }} step{{ liveSteps.length !== 1 ? 's' : '' }}
+          </div>
+        </div>
+
+        <!-- Live Steps Timeline -->
+        <div v-if="liveSteps.length > 0" class="space-y-2 max-h-64 overflow-y-auto pr-1">
+          <div
+            v-for="step in liveSteps.slice(0, 20)"
+            :key="step.id"
+            class="flex items-start gap-2.5 rounded-lg bg-white/50 dark:bg-white/5 p-2.5"
+          >
+            <Loader2 v-if="step.status === 'running'" class="size-3.5 text-emerald-600 animate-spin mt-0.5 shrink-0" />
+            <CheckCircle2 v-else-if="step.status === 'completed'" class="size-3.5 text-emerald-600 mt-0.5 shrink-0" />
+            <XCircle v-else class="size-3.5 text-red-500 mt-0.5 shrink-0" />
+            <div class="min-w-0 flex-1">
+              <div class="flex items-center gap-2">
+                <span class="text-xs font-medium text-foreground">{{ step.tool_name || step.agent_name }}</span>
+                <Badge v-if="step.tool_name" variant="secondary" class="text-[9px] px-1.5 py-0 h-4">
+                  {{ step.tool_name }}
+                </Badge>
+              </div>
+              <p class="text-[11px] text-muted-foreground line-clamp-1 mt-0.5">{{ step.input_summary || step.output_summary || 'Processing...' }}</p>
+            </div>
+            <span v-if="step.duration_ms" class="text-[10px] text-muted-foreground whitespace-nowrap shrink-0">
+              {{ (step.duration_ms / 1000).toFixed(1) }}s
+            </span>
+          </div>
+        </div>
+
+        <div v-else class="text-center py-4">
+          <Loader2 class="size-5 text-emerald-500 animate-spin mx-auto mb-2" />
+          <p class="text-xs text-emerald-600/70">Waiting for agent activity...</p>
+        </div>
+
+        <!-- Live Leads Banner -->
+        <div v-if="liveLeads.length > 0" class="mt-3 pt-3 border-t border-emerald-500/20">
+          <div class="flex items-center gap-2 mb-2">
+            <Sparkles class="size-3.5 text-amber-500" />
+            <span class="text-xs font-semibold text-emerald-700">{{ liveLeads.length }} new lead{{ liveLeads.length !== 1 ? 's' : '' }} discovered</span>
+          </div>
+          <div class="flex flex-wrap gap-1.5">
+            <Badge
+              v-for="lead in liveLeads.slice(0, 5)"
+              :key="lead.id"
+              variant="secondary"
+              class="text-[10px] bg-white/70 dark:bg-white/10"
+            >
+              {{ lead.name }} · {{ lead.company }}
+            </Badge>
+            <Badge v-if="liveLeads.length > 5" variant="secondary" class="text-[10px]">
+              +{{ liveLeads.length - 5 }} more
+            </Badge>
           </div>
         </div>
       </div>
@@ -1286,6 +1559,63 @@ const regions = ['North America', 'Europe', 'Asia Pacific', 'Global', 'United St
             />
           </div>
 
+          <!-- Agent Assignment (Required) -->
+          <div>
+            <label class="text-sm font-medium mb-1.5 block">
+              Assign Agents <span class="text-red-500">*</span>
+            </label>
+            <p class="text-xs text-muted-foreground mb-2">
+              Select one or more agents to run this campaign. Different agents have different capabilities — combine them for broader coverage.
+            </p>
+            <div v-if="availableAgents.filter(a => a.status === 'active').length === 0" class="p-4 rounded-lg border border-dashed text-center">
+              <Bot class="size-8 text-muted-foreground/40 mx-auto mb-2" />
+              <p class="text-sm text-muted-foreground">No active agents found</p>
+              <p class="text-xs text-muted-foreground mt-1">Create and activate agents in the Agents page first.</p>
+            </div>
+            <div v-else class="space-y-2 max-h-48 overflow-y-auto pr-1">
+              <div
+                v-for="agent in availableAgents.filter(a => a.status === 'active')"
+                :key="agent.id"
+                :class="[
+                  'flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all duration-150',
+                  createForm.agent_ids.includes(agent.id)
+                    ? 'border-primary bg-primary/5 ring-1 ring-primary/20'
+                    : 'border-border hover:border-primary/30 hover:bg-muted/30',
+                ]"
+                @click="toggleAgentSelection(agent.id)"
+              >
+                <div
+                  :class="[
+                    'mt-0.5 size-5 rounded-md border-2 flex items-center justify-center shrink-0 transition-colors',
+                    createForm.agent_ids.includes(agent.id)
+                      ? 'bg-primary border-primary'
+                      : 'border-muted-foreground/30',
+                  ]"
+                >
+                  <CheckCircle2 v-if="createForm.agent_ids.includes(agent.id)" class="size-3.5 text-white" />
+                </div>
+                <div class="flex-1 min-w-0">
+                  <div class="flex items-center gap-2">
+                    <span class="text-sm font-medium truncate">{{ agent.name }}</span>
+                    <Badge variant="secondary" class="text-[9px] px-1.5 py-0 h-4 shrink-0">
+                      {{ (agent.config as any)?.type || 'AI' }}
+                    </Badge>
+                  </div>
+                  <p v-if="agent.description" class="text-[11px] text-muted-foreground mt-0.5 line-clamp-1">{{ agent.description }}</p>
+                  <div class="flex items-center gap-2 mt-1">
+                    <span class="text-[10px] text-muted-foreground">{{ getAgentCapabilitySummary(agent) }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <p v-if="createForm.agent_ids.length > 0" class="text-[10px] text-primary font-medium mt-1.5">
+              {{ createForm.agent_ids.length }} agent{{ createForm.agent_ids.length > 1 ? 's' : '' }} selected
+            </p>
+            <p v-else class="text-[10px] text-red-500 mt-1.5">
+              At least one agent is required to run this campaign.
+            </p>
+          </div>
+
           <!-- Confidence Threshold -->
           <div>
             <div class="flex items-center justify-between mb-2">
@@ -1309,7 +1639,7 @@ const regions = ['North America', 'Europe', 'Asia Pacific', 'Global', 'United St
         <DialogFooter class="gap-2">
           <Button variant="outline" @click="showCreateDialog = false" :disabled="creatingCampaign">Cancel</Button>
           <Button
-            :disabled="!createForm.name || !createForm.target_industry || !createForm.target_roles || !createForm.search_criteria || creatingCampaign"
+            :disabled="!createForm.name || !createForm.target_industry || !createForm.target_roles || !createForm.search_criteria || createForm.agent_ids.length === 0 || creatingCampaign"
             @click="handleCreateCampaign"
           >
             <Loader2 v-if="creatingCampaign" class="size-4 mr-1.5 animate-spin" />

@@ -2,9 +2,6 @@ import {
   LayoutDashboard,
   Users,
   Contact,
-  Handshake,
-  FileText,
-  BarChart3,
   Settings,
   Workflow,
   Bot,
@@ -46,20 +43,12 @@ export function useCrmNavigation(): NavGroup[] {
       items: [
         { title: 'Leads', url: '/leads', icon: Users },
         { title: 'Contacts', url: '/contacts', icon: Contact },
-        { title: 'Deals', url: '/deals', icon: Handshake },
       ],
     },
     {
       label: 'Automation',
       items: [
         { title: 'Flows', url: '/flows', icon: Workflow },
-      ],
-    },
-    {
-      label: 'Reports',
-      items: [
-        { title: 'Analytics', url: '/analytics', icon: BarChart3 },
-        { title: 'Documents', url: '/documents', icon: FileText },
       ],
     },
     {

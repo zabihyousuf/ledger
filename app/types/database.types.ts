@@ -350,6 +350,8 @@ export interface Database {
           name: string
           description: string | null
           icon: string | null
+          category: string | null
+          source: string
           created_at: string
         }
         Insert: {
@@ -357,6 +359,8 @@ export interface Database {
           name: string
           description?: string | null
           icon?: string | null
+          category?: string | null
+          source?: string
           created_at?: string
         }
         Update: {
@@ -364,6 +368,8 @@ export interface Database {
           name?: string
           description?: string | null
           icon?: string | null
+          category?: string | null
+          source?: string
           created_at?: string
         }
       }
@@ -374,6 +380,8 @@ export interface Database {
           description: string | null
           icon: string | null
           config_schema: Json
+          category: string | null
+          source: string
           created_at: string
         }
         Insert: {
@@ -382,6 +390,8 @@ export interface Database {
           description?: string | null
           icon?: string | null
           config_schema?: Json
+          category?: string | null
+          source?: string
           created_at?: string
         }
         Update: {
@@ -390,6 +400,8 @@ export interface Database {
           description?: string | null
           icon?: string | null
           config_schema?: Json
+          category?: string | null
+          source?: string
           created_at?: string
         }
       }
@@ -404,12 +416,18 @@ export interface Database {
           target_region: string
           search_criteria: string
           agent_id: string | null
+          agent_ids: string[]
           leads_found: number
           leads_approved: number
           leads_rejected: number
           confidence_threshold: number
           created_at: string
           updated_at: string
+          agent_config: Record<string, unknown>
+          schedule_cron: string | null
+          max_leads_per_run: number
+          total_runs: number
+          last_run_at: string | null
         }
         Insert: {
           id?: string
@@ -421,10 +439,16 @@ export interface Database {
           target_region: string
           search_criteria: string
           agent_id?: string | null
+          agent_ids?: string[]
           leads_found?: number
           leads_approved?: number
           leads_rejected?: number
           confidence_threshold?: number
+          agent_config?: Record<string, unknown>
+          schedule_cron?: string | null
+          max_leads_per_run?: number
+          total_runs?: number
+          last_run_at?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -438,10 +462,16 @@ export interface Database {
           target_region?: string
           search_criteria?: string
           agent_id?: string | null
+          agent_ids?: string[]
           leads_found?: number
           leads_approved?: number
           leads_rejected?: number
           confidence_threshold?: number
+          agent_config?: Record<string, unknown>
+          schedule_cron?: string | null
+          max_leads_per_run?: number
+          total_runs?: number
+          last_run_at?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -602,6 +632,183 @@ export interface Database {
           notes?: string | null
           created_at?: string
           updated_at?: string
+        }
+      }
+    }
+      agent_runs: {
+        Row: {
+          id: string
+          campaign_id: string
+          agent_type: string
+          status: string
+          inngest_run_id: string | null
+          started_at: string | null
+          completed_at: string | null
+          steps_completed: number
+          steps_total: number | null
+          leads_found: number
+          error_message: string | null
+          llm_tokens_used: number
+          api_calls_made: number
+          metadata: Record<string, unknown>
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          campaign_id: string
+          agent_type?: string
+          status?: string
+          inngest_run_id?: string | null
+          started_at?: string | null
+          completed_at?: string | null
+          steps_completed?: number
+          steps_total?: number | null
+          leads_found?: number
+          error_message?: string | null
+          llm_tokens_used?: number
+          api_calls_made?: number
+          metadata?: Record<string, unknown>
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          campaign_id?: string
+          agent_type?: string
+          status?: string
+          inngest_run_id?: string | null
+          started_at?: string | null
+          completed_at?: string | null
+          steps_completed?: number
+          steps_total?: number | null
+          leads_found?: number
+          error_message?: string | null
+          llm_tokens_used?: number
+          api_calls_made?: number
+          metadata?: Record<string, unknown>
+          created_at?: string
+          updated_at?: string
+        }
+      }
+      agent_steps: {
+        Row: {
+          id: string
+          run_id: string
+          campaign_id: string
+          step_number: number
+          tool_name: string
+          tool_input: Record<string, unknown> | null
+          tool_output: Record<string, unknown> | null
+          status: string
+          duration_ms: number | null
+          error_message: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          run_id: string
+          campaign_id: string
+          step_number: number
+          tool_name: string
+          tool_input?: Record<string, unknown> | null
+          tool_output?: Record<string, unknown> | null
+          status?: string
+          duration_ms?: number | null
+          error_message?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          run_id?: string
+          campaign_id?: string
+          step_number?: number
+          tool_name?: string
+          tool_input?: Record<string, unknown> | null
+          tool_output?: Record<string, unknown> | null
+          status?: string
+          duration_ms?: number | null
+          error_message?: string | null
+          created_at?: string
+        }
+      }
+      campaign_metrics: {
+        Row: {
+          id: string
+          campaign_id: string
+          date: string
+          leads_discovered: number
+          leads_enriched: number
+          leads_qualified: number
+          leads_approved: number
+          leads_rejected: number
+          api_calls: number
+          llm_tokens: number
+          cost_cents: number
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          campaign_id: string
+          date: string
+          leads_discovered?: number
+          leads_enriched?: number
+          leads_qualified?: number
+          leads_approved?: number
+          leads_rejected?: number
+          api_calls?: number
+          llm_tokens?: number
+          cost_cents?: number
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          campaign_id?: string
+          date?: string
+          leads_discovered?: number
+          leads_enriched?: number
+          leads_qualified?: number
+          leads_approved?: number
+          leads_rejected?: number
+          api_calls?: number
+          llm_tokens?: number
+          cost_cents?: number
+          created_at?: string
+        }
+      }
+      api_usage: {
+        Row: {
+          id: string
+          provider: string
+          endpoint: string
+          campaign_id: string | null
+          run_id: string | null
+          credits_used: number
+          response_status: number | null
+          duration_ms: number | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          provider: string
+          endpoint: string
+          campaign_id?: string | null
+          run_id?: string | null
+          credits_used?: number
+          response_status?: number | null
+          duration_ms?: number | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          provider?: string
+          endpoint?: string
+          campaign_id?: string | null
+          run_id?: string | null
+          credits_used?: number
+          response_status?: number | null
+          duration_ms?: number | null
+          created_at?: string
         }
       }
     }

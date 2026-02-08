@@ -6,10 +6,19 @@ import {
   Radar,
   RefreshCw,
   Loader2,
+  Bot,
+  Zap,
+  CheckCircle2,
+  XCircle,
+  Timer,
 } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
+import type { Database } from '~/types/database.types'
+
+type AgentRun = Database['public']['Tables']['agent_runs']['Row']
 
 // ── Composables ──
+const client = useSupabaseClient<Database>()
 const { leads, stats, fetchLeads } = useLeads()
 const { deals, pipelineStages, fetchDeals } = useDeals()
 const { activities, fetchActivities } = useActivities()
@@ -24,6 +33,22 @@ const {
   activeCampaigns,
 } = useDiscovery()
 
+// ── Agent Run Metrics ──
+const agentRuns = ref<AgentRun[]>([])
+
+async function fetchAgentRuns() {
+  try {
+    const { data, error } = await client
+      .from('agent_runs')
+      .select('*')
+      .order('created_at', { ascending: false })
+    if (error) throw error
+    agentRuns.value = data || []
+  } catch (e) {
+    console.error('Error fetching agent runs:', e)
+  }
+}
+
 const loading = ref(true)
 
 onMounted(async () => {
@@ -34,6 +59,7 @@ onMounted(async () => {
       fetchActivities(10),
       fetchCampaigns(),
       fetchDiscoveredLeads(),
+      fetchAgentRuns(),
     ])
   } catch {
     toast.error('Failed to load analytics data.')
@@ -61,6 +87,7 @@ async function refreshData() {
       fetchActivities(10),
       fetchCampaigns(),
       fetchDiscoveredLeads(),
+      fetchAgentRuns(),
     ])
     toast.success('Analytics data refreshed.')
   } catch {
@@ -220,6 +247,28 @@ const campaignPerformance = computed(() =>
     }
   })
 )
+
+// ── Agent Run Metrics ──
+const runMetrics = computed(() => {
+  const total = agentRuns.value.length
+  const completed = agentRuns.value.filter(r => r.status === 'completed').length
+  const failed = agentRuns.value.filter(r => r.status === 'failed').length
+  const running = agentRuns.value.filter(r => r.status === 'running').length
+  const successRate = total > 0 ? Math.round((completed / Math.max(completed + failed, 1)) * 100) : 0
+
+  // Average duration for completed runs
+  const completedRuns = agentRuns.value.filter(r => r.status === 'completed' && r.completed_at && r.created_at)
+  const avgDuration = completedRuns.length > 0
+    ? Math.round(completedRuns.reduce((sum, r) => {
+        return sum + (new Date(r.completed_at!).getTime() - new Date(r.created_at).getTime()) / 1000
+      }, 0) / completedRuns.length)
+    : 0
+
+  // Total leads found across all runs
+  const totalLeadsFound = agentRuns.value.reduce((sum, r) => sum + (r.leads_found || 0), 0)
+
+  return { total, completed, failed, running, successRate, avgDuration, totalLeadsFound }
+})
 
 // ── Recent activities ──
 const recentActivities = computed(() => activities.value.slice(0, 10))
@@ -460,6 +509,94 @@ function campaignStatusVariant(status: string): 'default' | 'secondary' | 'outli
               <span class="text-sm text-muted-foreground">Total leads</span>
               <span class="text-sm font-bold">{{ leads.length }}</span>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ════════════════════════════════════════════ -->
+      <!-- AGENT RUN PERFORMANCE                       -->
+      <!-- ════════════════════════════════════════════ -->
+      <div v-if="agentRuns.length > 0" class="rounded-xl border border-border bg-card p-6 shadow-sm hover:shadow-md transition-shadow mb-8">
+        <div class="mb-5">
+          <h2 class="text-lg font-semibold">Agent Run Performance</h2>
+          <p class="text-sm text-muted-foreground mt-0.5">AI agent campaign execution metrics.</p>
+        </div>
+
+        <!-- Run Stats Cards -->
+        <div class="grid gap-4 grid-cols-2 lg:grid-cols-4 mb-6">
+          <div class="rounded-xl border border-border bg-muted/20 p-4">
+            <div class="flex items-center gap-2 mb-2">
+              <div class="size-8 rounded-lg bg-primary/10 flex items-center justify-center">
+                <Bot class="size-4 text-primary" />
+              </div>
+              <span class="text-xs font-medium text-muted-foreground">Total Runs</span>
+            </div>
+            <p class="text-2xl font-bold">{{ runMetrics.total }}</p>
+            <p v-if="runMetrics.running > 0" class="text-xs text-blue-600 font-medium mt-1 flex items-center gap-1">
+              <Loader2 class="size-3 animate-spin" /> {{ runMetrics.running }} running
+            </p>
+          </div>
+
+          <div class="rounded-xl border border-border bg-muted/20 p-4">
+            <div class="flex items-center gap-2 mb-2">
+              <div class="size-8 rounded-lg bg-emerald-500/10 flex items-center justify-center">
+                <CheckCircle2 class="size-4 text-emerald-600" />
+              </div>
+              <span class="text-xs font-medium text-muted-foreground">Success Rate</span>
+            </div>
+            <div class="flex items-baseline gap-1">
+              <p class="text-2xl font-bold">{{ runMetrics.successRate }}</p>
+              <span class="text-sm font-semibold text-muted-foreground">%</span>
+            </div>
+            <div class="mt-2 h-1.5 w-full rounded-full bg-muted overflow-hidden">
+              <div
+                class="h-full rounded-full bg-emerald-500 transition-all duration-700"
+                :style="{ width: `${runMetrics.successRate}%` }"
+              />
+            </div>
+          </div>
+
+          <div class="rounded-xl border border-border bg-muted/20 p-4">
+            <div class="flex items-center gap-2 mb-2">
+              <div class="size-8 rounded-lg bg-amber-500/10 flex items-center justify-center">
+                <Timer class="size-4 text-amber-600" />
+              </div>
+              <span class="text-xs font-medium text-muted-foreground">Avg Duration</span>
+            </div>
+            <p class="text-2xl font-bold">
+              {{ runMetrics.avgDuration > 60 ? `${Math.round(runMetrics.avgDuration / 60)}m` : `${runMetrics.avgDuration}s` }}
+            </p>
+            <p class="text-xs text-muted-foreground mt-1">per run</p>
+          </div>
+
+          <div class="rounded-xl border border-border bg-muted/20 p-4">
+            <div class="flex items-center gap-2 mb-2">
+              <div class="size-8 rounded-lg bg-indigo-500/10 flex items-center justify-center">
+                <Zap class="size-4 text-indigo-600" />
+              </div>
+              <span class="text-xs font-medium text-muted-foreground">Leads from Runs</span>
+            </div>
+            <p class="text-2xl font-bold">{{ runMetrics.totalLeadsFound }}</p>
+            <p class="text-xs text-muted-foreground mt-1">total discovered</p>
+          </div>
+        </div>
+
+        <!-- Status Breakdown -->
+        <div class="flex items-center gap-6 text-sm">
+          <div class="flex items-center gap-1.5">
+            <div class="size-2.5 rounded-full bg-emerald-500" />
+            <span class="text-muted-foreground">Completed:</span>
+            <span class="font-semibold">{{ runMetrics.completed }}</span>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <div class="size-2.5 rounded-full bg-red-500" />
+            <span class="text-muted-foreground">Failed:</span>
+            <span class="font-semibold">{{ runMetrics.failed }}</span>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <div class="size-2.5 rounded-full bg-blue-500 animate-pulse" />
+            <span class="text-muted-foreground">Running:</span>
+            <span class="font-semibold">{{ runMetrics.running }}</span>
           </div>
         </div>
       </div>

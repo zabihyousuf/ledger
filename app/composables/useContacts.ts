@@ -41,6 +41,22 @@ export function useContacts() {
         .single()
 
       if (insertError) throw insertError
+
+      // Emit event for flow triggers (fire-and-forget)
+      if (data) {
+        $fetch('/api/flows/emit-event', {
+          method: 'POST',
+          body: {
+            event: 'contact/added',
+            data: {
+              contactId: data.id,
+              contactName: `${data.first_name} ${data.last_name}`,
+              contactEmail: data.email,
+            },
+          },
+        }).catch(() => {}) // Don't block on flow trigger failures
+      }
+
       await fetchContacts()
       return data
     } catch (e) {

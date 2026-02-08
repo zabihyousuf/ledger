@@ -16,6 +16,15 @@ import {
   Zap,
   Signal,
   Eye,
+  Workflow,
+  Contact,
+  Settings,
+  Search,
+  BarChart3,
+  Globe,
+  Sparkles,
+  Shield,
+  FileText,
 } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
 
@@ -192,55 +201,58 @@ function campaignProgress(c: { leads_found: number; leads_approved: number }) {
   return Math.round((c.leads_approved / c.leads_found) * 100)
 }
 
-// --- Quick actions ---
-const quickActions = [
+// --- Stacked card groups ---
+const hoveredStack = ref<string | null>(null)
+
+const cardStacks = [
   {
-    label: 'Launch Discovery',
-    description: 'Find new leads with AI agents',
-    icon: Radar,
-    to: '/discovery',
-    iconBg: 'bg-indigo-500/10',
-    iconColor: 'text-indigo-600',
+    id: 'quick-actions',
+    title: 'Quick Actions',
+    color: 'from-indigo-500 to-violet-600',
+    bgAccent: 'bg-indigo-500/10',
+    textAccent: 'text-indigo-600',
+    items: [
+      { label: 'Launch Discovery', description: 'Find new leads with AI', icon: Radar, to: '/discovery' },
+      { label: 'Add Lead', description: 'Manual lead entry', icon: UserPlus, to: '/leads' },
+      { label: 'Browse Contacts', description: 'Your network', icon: Contact, to: '/contacts' },
+      { label: 'Build a Flow', description: 'Automate outreach', icon: Workflow, to: '/flows' },
+      { label: 'Configure Agents', description: 'AI workers', icon: Bot, to: '/agents' },
+    ],
   },
   {
-    label: 'Add Lead',
-    description: 'Manually add a new lead',
-    icon: UserPlus,
-    to: '/leads',
-    iconBg: 'bg-emerald-500/10',
-    iconColor: 'text-emerald-600',
+    id: 'intelligence',
+    title: 'Intelligence',
+    color: 'from-emerald-500 to-teal-600',
+    bgAccent: 'bg-emerald-500/10',
+    textAccent: 'text-emerald-600',
+    items: [
+      { label: 'Discovery Campaigns', description: 'AI-powered prospecting', icon: Radar, to: '/discovery' },
+      { label: 'Agent Activity', description: 'Monitor AI tasks', icon: Activity, to: '/activity' },
+      { label: 'Lead Scoring', description: 'Qualification pipeline', icon: Target, to: '/leads' },
+    ],
   },
   {
-    label: 'View Deals',
-    description: 'Manage your pipeline',
-    icon: DollarSign,
-    to: '/deals',
-    iconBg: 'bg-amber-500/10',
-    iconColor: 'text-amber-600',
+    id: 'outreach',
+    title: 'Outreach',
+    color: 'from-amber-500 to-orange-600',
+    bgAccent: 'bg-amber-500/10',
+    textAccent: 'text-amber-600',
+    items: [
+      { label: 'Email Sequences', description: 'Automated outreach', icon: Mail, to: '/flows' },
+      { label: 'Flow Builder', description: 'Visual automation', icon: Zap, to: '/flows' },
+      { label: 'Templates', description: 'Reusable workflows', icon: FileText, to: '/flows' },
+    ],
   },
   {
-    label: 'Contacts',
-    description: 'Browse your network',
-    icon: Mail,
-    to: '/contacts',
-    iconBg: 'bg-blue-500/10',
-    iconColor: 'text-blue-600',
-  },
-  {
-    label: 'Flows',
-    description: 'Automate outreach sequences',
-    icon: Zap,
-    to: '/flows',
-    iconBg: 'bg-orange-500/10',
-    iconColor: 'text-orange-600',
-  },
-  {
-    label: 'Agents',
-    description: 'Configure AI workers',
-    icon: Bot,
-    to: '/agents',
-    iconBg: 'bg-violet-500/10',
-    iconColor: 'text-violet-600',
+    id: 'workspace',
+    title: 'Workspace',
+    color: 'from-violet-500 to-purple-600',
+    bgAccent: 'bg-violet-500/10',
+    textAccent: 'text-violet-600',
+    items: [
+      { label: 'All Leads', description: 'Browse pipeline', icon: Users, to: '/leads' },
+      { label: 'Settings', description: 'Preferences', icon: Settings, to: '/settings' },
+    ],
   },
 ]
 </script>
@@ -257,23 +269,104 @@ const quickActions = [
     </div>
 
     <!-- ============================================ -->
-    <!-- QUICK ACTIONS                                -->
+    <!-- COMMAND CENTER — HORIZONTAL STACKED CARDS    -->
     <!-- ============================================ -->
     <section>
-      <h2 class="text-lg font-semibold mb-4">Quick Actions</h2>
-      <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-        <NuxtLink
-          v-for="action in quickActions"
-          :key="action.label"
-          :to="action.to"
-          class="group rounded-xl border border-border bg-card p-4 shadow-sm hover:shadow-md transition-shadow"
+      <h2 class="text-lg font-semibold mb-1">Command Center</h2>
+      <p class="text-sm text-muted-foreground mb-5">Hover a stack to reveal actions.</p>
+
+      <!-- Horizontal row of all stacks -->
+      <div class="relative" style="min-height: 120px;">
+        <!-- Collapsed state: all stacks side by side -->
+        <div
+          :class="[
+            'flex gap-4 transition-all duration-300 ease-in-out',
+            hoveredStack ? 'opacity-0 scale-[0.98] pointer-events-none' : 'opacity-100 scale-100',
+          ]"
         >
-          <div :class="['size-10 rounded-lg flex items-center justify-center mb-3', action.iconBg]">
-            <component :is="action.icon" :class="['size-5', action.iconColor]" />
+          <div
+            v-for="stack in cardStacks"
+            :key="stack.id"
+            class="flex-1 min-w-0 cursor-pointer"
+            @mouseenter="hoveredStack = stack.id"
+          >
+            <!-- Stack label -->
+            <p class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">{{ stack.title }}</p>
+
+            <!-- Stacked deck -->
+            <div class="relative" style="height: 80px;">
+              <!-- Decorative back cards -->
+              <div
+                v-if="stack.items.length > 2"
+                class="absolute inset-x-0 top-0 h-[72px] rounded-xl border border-border bg-card/30"
+                style="z-index: 0; transform: translate(6px, 6px);"
+              />
+              <div
+                v-if="stack.items.length > 1"
+                class="absolute inset-x-0 top-0 h-[72px] rounded-xl border border-border bg-card/50"
+                style="z-index: 1; transform: translate(3px, 3px);"
+              />
+              <!-- Top card -->
+              <div
+                class="absolute inset-x-0 top-0 rounded-xl border border-border bg-card p-4 shadow-sm"
+                style="z-index: 2;"
+              >
+                <div class="flex items-center gap-3">
+                  <div :class="['size-9 rounded-lg flex items-center justify-center bg-gradient-to-br text-white shrink-0', stack.color]">
+                    <component :is="stack.items[0].icon" class="size-4" />
+                  </div>
+                  <div class="min-w-0 flex-1">
+                    <p class="text-sm font-semibold leading-tight truncate">{{ stack.items[0].label }}</p>
+                    <p class="text-[11px] text-muted-foreground leading-snug">
+                      {{ stack.items.length }} action{{ stack.items.length !== 1 ? 's' : '' }}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
-          <p class="text-sm font-semibold leading-tight">{{ action.label }}</p>
-          <p class="text-[11px] text-muted-foreground mt-0.5 leading-snug">{{ action.description }}</p>
-        </NuxtLink>
+        </div>
+
+        <!-- Expanded state: hovered stack takes over full width -->
+        <div
+          v-for="stack in cardStacks"
+          :key="'expanded-' + stack.id"
+          :class="[
+            'absolute inset-0 transition-all duration-300 ease-in-out',
+            hoveredStack === stack.id ? 'opacity-100 scale-100' : 'opacity-0 scale-[0.98] pointer-events-none',
+          ]"
+          @mouseleave="hoveredStack = null"
+        >
+          <!-- Stack label -->
+          <p class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">{{ stack.title }}</p>
+
+          <!-- Expanded cards spread full width -->
+          <div class="flex gap-3">
+            <NuxtLink
+              v-for="(item, i) in stack.items"
+              :key="item.label"
+              :to="item.to"
+              class="flex-1 min-w-0 rounded-xl border border-border bg-card p-4 shadow-sm hover:shadow-md hover:border-primary/30 transition-all group/card"
+              :style="{
+                transitionDelay: hoveredStack === stack.id ? `${i * 40}ms` : '0ms',
+                transform: hoveredStack === stack.id ? 'translateY(0)' : 'translateY(8px)',
+                opacity: hoveredStack === stack.id ? '1' : '0',
+                transition: `all 250ms ease-out ${hoveredStack === stack.id ? i * 40 : 0}ms`,
+              }"
+            >
+              <div class="flex items-center gap-3">
+                <div :class="['size-9 rounded-lg flex items-center justify-center shrink-0', stack.bgAccent]">
+                  <component :is="item.icon" :class="['size-4', stack.textAccent]" />
+                </div>
+                <div class="min-w-0 flex-1">
+                  <p class="text-sm font-semibold leading-tight group-hover/card:text-primary transition-colors truncate">{{ item.label }}</p>
+                  <p class="text-[11px] text-muted-foreground leading-snug truncate">{{ item.description }}</p>
+                </div>
+                <ArrowUpRight class="size-3.5 text-muted-foreground/0 group-hover/card:text-muted-foreground/60 transition-colors shrink-0" />
+              </div>
+            </NuxtLink>
+          </div>
+        </div>
       </div>
     </section>
 

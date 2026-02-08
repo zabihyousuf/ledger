@@ -19,6 +19,22 @@ export default defineNuxtConfig({
     redirect: false,
   },
 
+  runtimeConfig: {
+    // Server-only keys (never exposed to client)
+    anthropicApiKey: '',
+    openaiApiKey: '',
+    inngestEventKey: '',
+    inngestSigningKey: '',
+    apolloApiKey: '',
+    hunterApiKey: '',
+    pdlApiKey: '',
+    zerobounceApiKey: '',
+    firecrawlApiKey: '',
+    supabaseServiceKey: '',
+    supabaseUrl: '',
+    composioApiKey: '',
+  },
+
   app: {
     head: {
       link: [

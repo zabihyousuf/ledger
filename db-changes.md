@@ -487,12 +487,167 @@ Run the SQL in this order:
 5. **Part 5**: Seed data (skills, tools)
 6. **Part 7**: Updated_at triggers
 7. **Part 8**: RLS policies
+8. **Part 9**: AI Agent Execution tables (agent_runs, agent_steps, campaign_metrics, api_usage)
+9. **Part 10**: Updated seed data (replaces Part 5 seeds with real tool implementations)
+10. **Part 11**: Marketplace columns, categories, and marketplace seed data
+11. **Part 12**: Multi-agent campaign support (agent_ids array, flow webhook columns)
 
 After running the SQL, update `database.types.ts` with the 5 new table types (Part 6).
 
 ---
 
 ## Code Changes Required After DB Setup
+
+---
+
+## Part 9: AI Agent Execution Tables (NEW)
+
+These tables support the AI agent execution engine (Inngest + Vercel AI SDK).
+
+```sql
+-- ============================================
+-- PART 9: AI Agent Execution Tables
+-- ============================================
+
+-- agent_runs: track each campaign execution
+CREATE TABLE agent_runs (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  campaign_id UUID REFERENCES discovery_campaigns(id) ON DELETE CASCADE,
+  agent_type TEXT NOT NULL DEFAULT 'full_pipeline',
+  status TEXT DEFAULT 'pending',
+  inngest_run_id TEXT,
+  started_at TIMESTAMPTZ,
+  completed_at TIMESTAMPTZ,
+  steps_completed INTEGER DEFAULT 0,
+  steps_total INTEGER,
+  leads_found INTEGER DEFAULT 0,
+  error_message TEXT,
+  llm_tokens_used INTEGER DEFAULT 0,
+  api_calls_made INTEGER DEFAULT 0,
+  metadata JSONB DEFAULT '{}',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- agent_steps: each tool call made by an agent during a run
+CREATE TABLE agent_steps (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  run_id UUID REFERENCES agent_runs(id) ON DELETE CASCADE,
+  campaign_id UUID REFERENCES discovery_campaigns(id) ON DELETE CASCADE,
+  step_number INTEGER NOT NULL,
+  tool_name TEXT NOT NULL,
+  tool_input JSONB,
+  tool_output JSONB,
+  status TEXT DEFAULT 'running',
+  duration_ms INTEGER,
+  error_message TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- campaign_metrics: daily aggregated stats per campaign
+CREATE TABLE campaign_metrics (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  campaign_id UUID REFERENCES discovery_campaigns(id) ON DELETE CASCADE,
+  date DATE NOT NULL,
+  leads_discovered INTEGER DEFAULT 0,
+  leads_enriched INTEGER DEFAULT 0,
+  leads_qualified INTEGER DEFAULT 0,
+  leads_approved INTEGER DEFAULT 0,
+  leads_rejected INTEGER DEFAULT 0,
+  api_calls INTEGER DEFAULT 0,
+  llm_tokens INTEGER DEFAULT 0,
+  cost_cents INTEGER DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(campaign_id, date)
+);
+
+-- api_usage: per-call API usage tracking
+CREATE TABLE api_usage (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  provider TEXT NOT NULL,
+  endpoint TEXT NOT NULL,
+  campaign_id UUID REFERENCES discovery_campaigns(id),
+  run_id UUID REFERENCES agent_runs(id),
+  credits_used INTEGER DEFAULT 1,
+  response_status INTEGER,
+  duration_ms INTEGER,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Add new columns to discovery_campaigns for agent config
+ALTER TABLE discovery_campaigns ADD COLUMN IF NOT EXISTS agent_config JSONB DEFAULT '{}';
+ALTER TABLE discovery_campaigns ADD COLUMN IF NOT EXISTS schedule_cron TEXT;
+ALTER TABLE discovery_campaigns ADD COLUMN IF NOT EXISTS max_leads_per_run INTEGER DEFAULT 50;
+ALTER TABLE discovery_campaigns ADD COLUMN IF NOT EXISTS total_runs INTEGER DEFAULT 0;
+ALTER TABLE discovery_campaigns ADD COLUMN IF NOT EXISTS last_run_at TIMESTAMPTZ;
+
+-- Indexes for performance
+CREATE INDEX idx_agent_runs_campaign ON agent_runs(campaign_id);
+CREATE INDEX idx_agent_runs_status ON agent_runs(status);
+CREATE INDEX idx_agent_steps_run ON agent_steps(run_id);
+CREATE INDEX idx_agent_steps_campaign ON agent_steps(campaign_id);
+CREATE INDEX idx_campaign_metrics_campaign ON campaign_metrics(campaign_id);
+CREATE INDEX idx_api_usage_provider ON api_usage(provider);
+CREATE INDEX idx_api_usage_campaign ON api_usage(campaign_id);
+
+-- RLS (permissive — no auth)
+ALTER TABLE agent_runs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE agent_steps ENABLE ROW LEVEL SECURITY;
+ALTER TABLE campaign_metrics ENABLE ROW LEVEL SECURITY;
+ALTER TABLE api_usage ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Allow all on agent_runs" ON agent_runs FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all on agent_steps" ON agent_steps FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all on campaign_metrics" ON campaign_metrics FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all on api_usage" ON api_usage FOR ALL USING (true) WITH CHECK (true);
+
+-- updated_at trigger for agent_runs
+CREATE TRIGGER agent_runs_updated_at BEFORE UPDATE ON agent_runs
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+```
+
+## Part 10: Updated Seed Data for Skills & Tools
+
+Replace the seed data from Part 5 with these updated entries that match the real tool implementations:
+
+```sql
+-- ============================================
+-- PART 10: Updated Seed Data
+-- ============================================
+
+-- Delete old seed data and re-insert
+DELETE FROM agent_skills;
+DELETE FROM agent_tools;
+DELETE FROM skills;
+DELETE FROM tools;
+
+-- Skills (match agent capabilities)
+INSERT INTO skills (name, description, icon) VALUES
+  ('Company Search', 'Search for companies by industry, size, and location', 'Search'),
+  ('Contact Finding', 'Find people at specific companies by role/title', 'Users'),
+  ('Email Discovery', 'Find and verify email addresses for contacts', 'Mail'),
+  ('Website Intelligence', 'Extract structured data from company websites', 'Globe'),
+  ('Lead Scoring', 'AI-powered ICP fit analysis and scoring', 'Target'),
+  ('Data Enrichment', 'Augment lead records with additional firmographic data', 'Database'),
+  ('Email Verification', 'Validate email deliverability before outreach', 'Shield');
+
+-- Tools (match server/tools/ implementations)
+INSERT INTO tools (name, description, icon, config_schema) VALUES
+  ('Apollo.io', 'B2B company and contact search API with 200M+ contacts', 'Search', '{"api_key": "string"}'),
+  ('Hunter.io', 'Email finding and verification service', 'Mail', '{"api_key": "string"}'),
+  ('People Data Labs', 'Person and company enrichment API with 3B+ records', 'Database', '{"api_key": "string"}'),
+  ('Firecrawl', 'AI-powered web scraping and content extraction', 'Globe', '{"api_key": "string"}'),
+  ('Jina Reader', 'URL to clean markdown text conversion', 'FileOutput', '{"api_key": "string"}'),
+  ('ZeroBounce', 'Email validation and deliverability verification', 'Shield', '{"api_key": "string"}');
+
+-- Pre-configured agents
+INSERT INTO agents (name, description, status, config) VALUES
+  ('Lead Scout', 'Searches company databases and websites to discover potential leads matching your ICP criteria.', 'active', '{"type": "discovery", "maxSteps": 25}'),
+  ('Lead Enricher', 'Enriches discovered leads with detailed contact info, company data, and verified emails.', 'active', '{"type": "enrichment", "maxSteps": 15}'),
+  ('Lead Qualifier', 'Analyzes and scores leads against your ICP using AI to determine fit and priority.', 'active', '{"type": "qualification", "maxSteps": 10}');
+```
+
+---
 
 After the database is set up, the following code changes are needed:
 
@@ -509,3 +664,112 @@ After the database is set up, the following code changes are needed:
 6. **Update `analytics.vue`** — Replace mock campaign data with real `discovery_campaigns` queries
 
 7. **Update `dashboard (index.vue)`** — Connect discovery stats to real data
+
+---
+
+## Part 11: Marketplace Columns & Agent-Campaign Wiring
+
+These changes add marketplace support to skills/tools and enable the agent-campaign connection.
+
+### 11A. Add marketplace columns to skills & tools
+
+```sql
+-- Add marketplace columns to skills
+ALTER TABLE skills ADD COLUMN IF NOT EXISTS category TEXT;
+ALTER TABLE skills ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'built_in';
+
+-- Add marketplace columns to tools
+ALTER TABLE tools ADD COLUMN IF NOT EXISTS category TEXT;
+ALTER TABLE tools ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'built_in';
+
+-- Index for marketplace browsing
+CREATE INDEX IF NOT EXISTS idx_skills_category ON skills(category);
+CREATE INDEX IF NOT EXISTS idx_skills_source ON skills(source);
+CREATE INDEX IF NOT EXISTS idx_tools_category ON tools(category);
+CREATE INDEX IF NOT EXISTS idx_tools_source ON tools(source);
+```
+
+### 11B. Update existing seed data with categories
+
+```sql
+-- Categorize existing skills
+UPDATE skills SET category = 'data_collection' WHERE name IN ('Company Search', 'Contact Finding', 'Website Intelligence');
+UPDATE skills SET category = 'enrichment' WHERE name IN ('Email Discovery', 'Data Enrichment', 'Email Verification');
+UPDATE skills SET category = 'analysis' WHERE name IN ('Lead Scoring');
+
+-- Categorize existing tools
+UPDATE tools SET category = 'search' WHERE name IN ('Apollo.io');
+UPDATE tools SET category = 'email' WHERE name IN ('Hunter.io', 'ZeroBounce');
+UPDATE tools SET category = 'enrichment' WHERE name IN ('People Data Labs');
+UPDATE tools SET category = 'scraping' WHERE name IN ('Firecrawl', 'Jina Reader');
+```
+
+### 11C. Add marketplace skills & tools
+
+```sql
+-- Marketplace skills (community/external)
+INSERT INTO skills (name, description, icon, category, source) VALUES
+  ('Social Monitoring', 'Track social media mentions and engagement signals', 'Radio', 'intelligence', 'marketplace'),
+  ('CRM Sync', 'Sync discovered leads to your CRM automatically', 'Database', 'integration', 'marketplace'),
+  ('Competitive Intel', 'Monitor competitor activities and positioning', 'Eye', 'intelligence', 'marketplace'),
+  ('Intent Detection', 'Detect purchase intent from web activity', 'Target', 'analysis', 'marketplace')
+ON CONFLICT DO NOTHING;
+
+-- Marketplace tools (community/external)
+INSERT INTO tools (name, description, icon, config_schema, category, source) VALUES
+  ('Clearbit', 'Company and contact enrichment API', 'Database', '{"api_key": "string"}', 'enrichment', 'marketplace'),
+  ('Crunchbase', 'Startup funding and company intelligence', 'TrendingUp', '{"api_key": "string"}', 'intelligence', 'marketplace'),
+  ('PhantomBuster', 'Cloud-based scraping and automation', 'Globe', '{"api_key": "string"}', 'scraping', 'marketplace'),
+  ('Snov.io', 'Email finder and outreach platform', 'Mail', '{"api_key": "string"}', 'email', 'marketplace')
+ON CONFLICT DO NOTHING;
+```
+
+### 11D. Agent-Campaign connection
+
+The `discovery_campaigns.agent_id` column already exists (see Part 4, line `agent_id uuid references public.agents(id) on delete set null`). The frontend now uses this column when creating campaigns — users select an agent in the campaign creation dialog, and the `agent_id` is stored on the campaign record.
+
+No additional SQL is needed for this — the column and FK constraint are already in place.
+
+---
+
+## Part 12: Multi-Agent Campaign Support
+
+Campaigns now support multiple assigned agents. Each agent has different capabilities (discovery, enrichment, qualification), so users can combine agents for broader coverage. The `agent_ids` column stores an array of agent UUIDs alongside the legacy `agent_id` column for backward compatibility.
+
+### 12A. Add `agent_ids` array column to `discovery_campaigns`
+
+```sql
+-- Add multi-agent support to discovery_campaigns
+ALTER TABLE discovery_campaigns ADD COLUMN IF NOT EXISTS agent_ids UUID[] DEFAULT '{}';
+
+-- Index for querying campaigns by agent
+CREATE INDEX IF NOT EXISTS idx_discovery_campaigns_agent_ids ON discovery_campaigns USING GIN (agent_ids);
+```
+
+### 12B. Migrate existing single-agent campaigns
+
+If you have existing campaigns with `agent_id` set, run this to populate `agent_ids`:
+
+```sql
+-- Backfill agent_ids from legacy agent_id column
+UPDATE discovery_campaigns
+SET agent_ids = ARRAY[agent_id]
+WHERE agent_id IS NOT NULL
+  AND (agent_ids IS NULL OR agent_ids = '{}');
+```
+
+### 12C. Flow trigger webhook_secret column (for webhook flows)
+
+```sql
+-- Add webhook secret for secure webhook trigger validation
+ALTER TABLE flows ADD COLUMN IF NOT EXISTS webhook_secret TEXT;
+ALTER TABLE flows ADD COLUMN IF NOT EXISTS last_triggered_at TIMESTAMPTZ;
+ALTER TABLE flows ADD COLUMN IF NOT EXISTS trigger_count INTEGER DEFAULT 0;
+```
+
+### 12D. Notes
+
+- The frontend now requires at least one agent when creating a campaign (no longer optional)
+- The `agent_id` column is kept for backward compatibility — it stores the first agent from `agent_ids`
+- The campaign start API resolves `agent_ids` first, falling back to `agent_id` for older campaigns
+- `database.types.ts` already has `agent_ids: string[]` on the `discovery_campaigns` type

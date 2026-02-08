@@ -11,6 +11,13 @@ import {
   Clock,
   Search,
   Loader2,
+  Mail,
+  Zap,
+  GitBranch,
+  Target,
+  UserPlus,
+  MessageSquare,
+  Sparkles,
 } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
 import type { Flow } from '~/composables/useFlows'
@@ -36,21 +43,80 @@ const filteredFlows = computed(() => {
   })
 })
 
+// ── Flow templates (use cases) ──
+const flowTemplates = [
+  {
+    name: 'Lead Nurture Sequence',
+    description: 'Automated email drip campaign that warms up newly discovered leads over 2 weeks with personalized touchpoints.',
+    icon: Mail,
+    color: 'bg-green-500',
+    trigger_type: 'lead_created',
+    category: 'outreach',
+  },
+  {
+    name: 'Discovery Follow-up',
+    description: 'Automatically enrich and score leads from AI discovery campaigns, then route qualified ones to outreach.',
+    icon: Sparkles,
+    color: 'bg-indigo-500',
+    trigger_type: 'lead_created',
+    category: 'enrichment',
+  },
+  {
+    name: 'Re-engagement Campaign',
+    description: 'Win back cold leads that haven\'t responded in 30+ days with a fresh approach and new value proposition.',
+    icon: Target,
+    color: 'bg-amber-500',
+    trigger_type: 'scheduled',
+    category: 'outreach',
+  },
+  {
+    name: 'Welcome & Onboarding',
+    description: 'Multi-step welcome flow for new contacts: intro email → company overview → meeting request.',
+    icon: UserPlus,
+    color: 'bg-blue-500',
+    trigger_type: 'contact_added',
+    category: 'onboarding',
+  },
+  {
+    name: 'Qualification Pipeline',
+    description: 'Score leads based on engagement signals, branch qualified vs unqualified, and auto-assign to reps.',
+    icon: GitBranch,
+    color: 'bg-purple-500',
+    trigger_type: 'lead_created',
+    category: 'qualification',
+  },
+  {
+    name: 'Meeting Scheduler',
+    description: 'After a lead opens your email, wait for the right moment, then send a calendly link with a personalized note.',
+    icon: Clock,
+    color: 'bg-orange-500',
+    trigger_type: 'webhook',
+    category: 'outreach',
+  },
+]
+
 // ── Create flow dialog ──
 const showCreateDialog = ref(false)
 const createForm = ref({ name: '', description: '', trigger_type: 'manual' })
 
 const triggerTypes = [
-  { value: 'manual', label: 'Manual Trigger' },
-  { value: 'lead_created', label: 'New Lead Created' },
-  { value: 'deal_stage_changed', label: 'Deal Stage Changed' },
-  { value: 'contact_added', label: 'Contact Added' },
-  { value: 'scheduled', label: 'Scheduled (Cron)' },
-  { value: 'webhook', label: 'Incoming Webhook' },
+  { value: 'manual', label: 'Manual Trigger', description: 'Trigger this flow manually from the UI or API' },
+  { value: 'lead_created', label: 'New Lead Created', description: 'Automatically runs when a new lead is added to the system' },
+  { value: 'contact_added', label: 'Contact Added', description: 'Automatically runs when a new contact is created' },
+  { value: 'scheduled', label: 'Scheduled (Hourly)', description: 'Runs automatically every hour via background job' },
+  { value: 'webhook', label: 'Incoming Webhook', description: 'Triggered by an external service via POST /api/flows/webhook' },
 ]
 
-function openCreateDialog() {
-  createForm.value = { name: '', description: '', trigger_type: 'manual' }
+function openCreateDialog(template?: typeof flowTemplates[number]) {
+  if (template) {
+    createForm.value = {
+      name: template.name,
+      description: template.description,
+      trigger_type: template.trigger_type,
+    }
+  } else {
+    createForm.value = { name: '', description: '', trigger_type: 'manual' }
+  }
   showCreateDialog.value = true
 }
 
@@ -169,20 +235,50 @@ function statusVariant(status: string): 'default' | 'secondary' | 'outline' | 'd
 <template>
   <div>
     <!-- Header -->
-    <div class="mb-6 flex items-center justify-between">
-      <div>
-        <h2 class="text-2xl font-bold tracking-tight">Flows</h2>
-        <p class="text-muted-foreground">Build and manage your automation workflows.</p>
+    <div class="rounded-xl border border-border bg-card px-8 py-7 shadow-sm mb-6">
+      <div class="flex items-center justify-between">
+        <div>
+          <p class="text-sm font-medium text-muted-foreground tracking-wide uppercase">Automation</p>
+          <h2 class="text-2xl font-bold tracking-tight mt-1">Flows</h2>
+          <p class="text-muted-foreground mt-1 text-sm">Build outreach sequences, lead nurture campaigns, and automation pipelines.</p>
+        </div>
+        <Button @click="openCreateDialog()">
+          <Plus class="size-4 mr-1" />
+          New Flow
+        </Button>
       </div>
-      <Button @click="openCreateDialog">
-        <Plus class="size-4 mr-1" />
-        New Flow
-      </Button>
+    </div>
+
+    <!-- Flow Templates -->
+    <div class="mb-6">
+      <h3 class="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">Start from a Template</h3>
+      <div class="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+        <div
+          v-for="template in flowTemplates"
+          :key="template.name"
+          class="rounded-xl border border-dashed border-border bg-card/50 p-4 cursor-pointer hover:border-primary/40 hover:bg-primary/5 transition-all group"
+          @click="openCreateDialog(template)"
+        >
+          <div class="flex items-center gap-3 mb-2">
+            <div :class="[template.color, 'rounded-lg p-2 text-white']">
+              <component :is="template.icon" class="size-4" />
+            </div>
+            <div class="flex-1 min-w-0">
+              <h4 class="text-sm font-semibold group-hover:text-primary transition-colors">{{ template.name }}</h4>
+              <Badge variant="secondary" class="text-[9px] capitalize mt-0.5">{{ template.category }}</Badge>
+            </div>
+          </div>
+          <p class="text-xs text-muted-foreground line-clamp-2">{{ template.description }}</p>
+        </div>
+      </div>
     </div>
 
     <!-- Filters -->
     <div class="mb-4 flex flex-wrap items-center gap-3">
-      <div class="relative flex-1 min-w-[200px] max-w-sm">
+      <div class="flex-1 min-w-0">
+        <h3 class="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Your Flows</h3>
+      </div>
+      <div class="relative min-w-[200px] max-w-sm">
         <Search class="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
         <Input v-model="searchQuery" placeholder="Search flows..." class="pl-9" />
       </div>
@@ -207,8 +303,8 @@ function statusVariant(status: string): 'default' | 'secondary' | 'outline' | 'd
         <Workflow class="size-8 text-muted-foreground" />
       </div>
       <h3 class="text-lg font-semibold mb-1">No flows yet</h3>
-      <p class="text-muted-foreground mb-4">Create your first automation flow to get started.</p>
-      <Button @click="openCreateDialog">
+      <p class="text-muted-foreground mb-4">Choose a template above or create a custom flow.</p>
+      <Button @click="openCreateDialog()">
         <Plus class="size-4 mr-1" />
         Create Flow
       </Button>
@@ -277,7 +373,7 @@ function statusVariant(status: string): 'default' | 'secondary' | 'outline' | 'd
       <!-- New flow card -->
       <div
         class="rounded-xl border-2 border-dashed border-border bg-card/50 p-6 flex flex-col items-center justify-center text-muted-foreground hover:border-primary/50 hover:text-foreground transition-colors cursor-pointer min-h-[200px]"
-        @click="openCreateDialog"
+        @click="openCreateDialog()"
       >
         <div class="rounded-full bg-muted p-3 mb-3">
           <Plus class="size-5" />
@@ -304,16 +400,34 @@ function statusVariant(status: string): 'default' | 'secondary' | 'outline' | 'd
           </div>
           <div>
             <label class="text-sm font-medium mb-1.5 block">Trigger Type</label>
-            <Select v-model="createForm.trigger_type">
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem v-for="t in triggerTypes" :key="t.value" :value="t.value">
-                  {{ t.label }}
-                </SelectItem>
-              </SelectContent>
-            </Select>
+            <div class="space-y-2">
+              <div
+                v-for="t in triggerTypes"
+                :key="t.value"
+                :class="[
+                  'flex items-start gap-3 rounded-lg border p-3 cursor-pointer transition-all',
+                  createForm.trigger_type === t.value
+                    ? 'border-primary bg-primary/5'
+                    : 'border-border hover:bg-muted/50 hover:border-primary/40'
+                ]"
+                @click="createForm.trigger_type = t.value"
+              >
+                <div class="mt-0.5">
+                  <div
+                    :class="[
+                      'size-4 rounded-full border-2 flex items-center justify-center transition-colors',
+                      createForm.trigger_type === t.value ? 'border-primary' : 'border-muted-foreground/30'
+                    ]"
+                  >
+                    <div v-if="createForm.trigger_type === t.value" class="size-2 rounded-full bg-primary" />
+                  </div>
+                </div>
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm font-medium">{{ t.label }}</p>
+                  <p class="text-[11px] text-muted-foreground mt-0.5">{{ t.description }}</p>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
         <DialogFooter>

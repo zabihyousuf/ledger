@@ -15,5 +15,5 @@ import { Toaster } from '@/components/ui/sonner'
       </main>
     </SidebarInset>
   </SidebarProvider>
-  <Toaster position="bottom-right" :duration="3000" richColors />
+  <Toaster position="top-right" :duration="3000" :style="{ zIndex: 9999 }" />
 </template>
